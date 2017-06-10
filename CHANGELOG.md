@@ -30,6 +30,12 @@ each for its own `findOne*` or `find*` methods
 Now naming strategy should be registered by passing naming strategy instance directly
 * `driver` section in connection options now deprecated. All settings should go directly to connection options root.
 * removed `fromTable` from the `QueryBuilder`. Now use regular `from` to select from tables
+* removed `usePool` option from the connection options
+* connection options interface has changed and now each platform has its own set of connection options
+* `storage` in sqlite options has been renamed to `database`
+* env variable names for connection were changed (`TYPEORM_DRIVER_TYPE` has been renamed to `TYPEORM_CONNECTION`, some other renaming).
+More env variable names you can find in `ConnectionOptionsEnvReader` class.
+* some api changes in `ConnectionManager` and `createConnection` / `createConnections` methods of typeorm main entrypoint
 
 ### OTHER API CHANGES
 
@@ -41,6 +47,10 @@ Now naming strategy should be registered by passing naming strategy instance dir
 * added `mongodb` support
 * entity now can be saved partially within `update` method
 * added prefix support to embeddeds
+* now embeddeds inside other embeddeds are supported
+* now relations are supported inside embeds
+* now relations for multiple primary keys are generated properly
+* now ormconfig is read from `.env`, `.js`, `.json`, `.yml`, `.xml` formats
 
 ### BUG FIXES
 

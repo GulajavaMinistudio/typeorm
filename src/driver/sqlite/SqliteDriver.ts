@@ -15,6 +15,8 @@ import {PlatformTools} from "../../platform/PlatformTools";
 import {NamingStrategyInterface} from "../../naming-strategy/NamingStrategyInterface";
 import {LazyRelationsWrapper} from "../../lazy-loading/LazyRelationsWrapper";
 import {Connection} from "../../connection/Connection";
+import {SchemaBuilder} from "../../schema-builder/SchemaBuilder";
+import {SqliteConnectionOptions} from "./SqliteConnectionOptions";
 
 /**
  * Organizes communication with sqlite DBMS.
@@ -35,14 +37,18 @@ export class SqliteDriver implements Driver {
      */
     protected databaseConnection: DatabaseConnection|undefined;
 
+    protected options: SqliteConnectionOptions;
+
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
     constructor(protected connection: Connection) {
 
+        this.options = connection.options as SqliteConnectionOptions;
+
         // validate options to make sure everything is set
-        if (!connection.options.storage)
+        if (!this.options.database)
             throw new DriverOptionNotSetError("storage");
 
         // load sqlite package
@@ -58,7 +64,7 @@ export class SqliteDriver implements Driver {
      */
     connect(): Promise<void> {
         return new Promise<void>((ok, fail) => {
-            const connection = new this.sqlite.Database(this.connection.options.storage, (err: any) => {
+            const connection = new this.sqlite.Database(this.options.database, (err: any) => {
                 if (err)
                     return fail(err);
 
@@ -88,6 +94,14 @@ export class SqliteDriver implements Driver {
                 return fail(new ConnectionIsNotSetError("sqlite"));
             this.databaseConnection.connection.close(handler);
         });
+    }
+
+    /**
+     * Synchronizes database schema (creates tables, indices, etc).
+     */
+    syncSchema(): Promise<void> {
+        const schemaBuilder = new SchemaBuilder(this.connection);
+        return schemaBuilder.build();
     }
 
     /**

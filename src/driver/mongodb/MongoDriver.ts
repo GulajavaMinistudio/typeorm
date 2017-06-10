@@ -11,6 +11,7 @@ import {DriverOptionNotSetError} from "../error/DriverOptionNotSetError";
 import {PlatformTools} from "../../platform/PlatformTools";
 import {EntityMetadata} from "../../metadata/EntityMetadata";
 import {Connection} from "../../connection/Connection";
+import {MongoConnectionOptions} from "./MongoConnectionOptions";
 
 /**
  * Organizes communication with MongoDB.
@@ -40,12 +41,15 @@ export class MongoDriver implements Driver {
      * Connection to mongodb database provided by native driver.
      */
     protected pool: any;
+    
+    protected options: MongoConnectionOptions;
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
     constructor(protected connection: Connection) {
+        this.options = connection.options as MongoConnectionOptions;
 
         // validate options to make sure everything is correct and driver will be able to establish connection
         this.validateOptions(connection.options);
@@ -63,7 +67,7 @@ export class MongoDriver implements Driver {
      */
     connect(): Promise<void> {
         return new Promise<void>((ok, fail) => {
-            this.mongodb.MongoClient.connect(this.buildConnectionUrl(), this.connection.options!.extra, (err: any, database: any) => {
+            this.mongodb.MongoClient.connect(this.buildConnectionUrl(), this.options.extra, (err: any, database: any) => {
                 if (err) return fail(err);
 
                 this.pool = database;
@@ -196,11 +200,13 @@ export class MongoDriver implements Driver {
         return value;
     }
 
-    // todo: make better abstraction
-    async syncSchema(entityMetadatas: EntityMetadata[]): Promise<void> {
+    /**
+     * Synchronizes database schema (creates indices).
+     */
+    async syncSchema(): Promise<void> {
         const queryRunner = await this.createQueryRunner() as MongoQueryRunner;
         const promises: Promise<any>[] = [];
-        await Promise.all(entityMetadatas.map(metadata => {
+        await Promise.all(this.connection.entityMetadatas.map(metadata => {
             metadata.indices.forEach(index => {
                 const options = { name: index.name };
                 promises.push(queryRunner.createCollectionIndex(metadata.tableName, index.columnNamesWithOrderingMap, options));
@@ -239,10 +245,10 @@ export class MongoDriver implements Driver {
      * Builds connection url that is passed to underlying driver to perform connection to the mongodb database.
      */
     protected buildConnectionUrl(): string {
-        if (this.connection.options.url)
-            return this.connection.options.url;
+        if (this.options.url)
+            return this.options.url;
 
-        return `mongodb://${this.connection.options.host || "127.0.0.1"}:${this.connection.options.port || "27017"}/${this.connection.options.database}`;
+        return `mongodb://${this.options.host || "127.0.0.1"}:${this.options.port || "27017"}/${this.options.database}`;
     }
 
 }

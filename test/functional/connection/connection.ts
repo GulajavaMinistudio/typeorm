@@ -23,6 +23,7 @@ import {Question} from "./modules/question/entity/Question";
 import {Video} from "./modules/video/entity/Video";
 import {ConnectionOptions} from "../../../src/connection/ConnectionOptions";
 import {DefaultNamingStrategy} from "../../../src/naming-strategy/DefaultNamingStrategy";
+import {PostgresConnectionOptions} from "../../../src/driver/postgres/PostgresConnectionOptions";
 
 describe("Connection", () => {
     const resourceDir = __dirname + "/../../../../../test/functional/connection/";
@@ -212,15 +213,16 @@ describe("Connection", () => {
 
     });
 
-    describe("skip schema generation when skipSchemaSync option is used", function() {
+    describe("skip schema generation when skipSync option is used", function() {
 
         let connections: Connection[];
         beforeEach(() => createTestingConnections({ entities: [View], dropSchemaOnConnection: true }).then(all => connections = all));
         afterEach(() => closeTestingConnections(connections));
         it("database should be empty after schema sync", () => Promise.all(connections.map(async connection => {
             await connection.syncSchema(true);
-            const queryRunner = await connection.driver.createQueryRunner();
+            const queryRunner = connection.driver.createQueryRunner();
             let schema = await queryRunner.loadTableSchemas(["view"]);
+            await queryRunner.release();
             expect(schema.some(table => table.name === "view")).to.be.false;
         })));
 
@@ -294,7 +296,7 @@ describe("Connection", () => {
         it("schema name can be set", () => {
             return Promise.all(connections.map(async connection => {
                 await connection.syncSchema(true);
-                const schemaName = (connection.driver as PostgresDriver).schemaName;
+                const schemaName = (connection.options as PostgresConnectionOptions).schemaName;
                 const comment = new CommentV1();
                 comment.title = "Change SchemaName";
                 comment.context = `To ${schemaName}`;
@@ -302,8 +304,9 @@ describe("Connection", () => {
                 const commentRepo = connection.getRepository(CommentV1);
                 await commentRepo.save(comment);
 
-                const query = await connection.driver.createQueryRunner();
-                const rows = await query.query(`select * from "${schemaName}"."comment" where id = $1`, [comment.id]);
+                const queryRunner = connection.driver.createQueryRunner();
+                const rows = await queryRunner.query(`select * from "${schemaName}"."comment" where id = $1`, [comment.id]);
+                await queryRunner.release();
                 expect(rows[0]["context"]).to.be.eq(comment.context);
             }));
 

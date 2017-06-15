@@ -4,7 +4,6 @@ import {Connection} from "../connection/Connection";
 import {QueryRunner} from "../query-runner/QueryRunner";
 import {JunctionInsert, JunctionRemove, Subject} from "./Subject";
 import {OrmUtils} from "../util/OrmUtils";
-import {QueryRunnerProvider} from "../query-runner/QueryRunnerProvider";
 import {EntityManager} from "../entity-manager/EntityManager";
 import {PromiseUtils} from "../util/PromiseUtils";
 import {MongoDriver} from "../driver/mongodb/MongoDriver";
@@ -47,18 +46,13 @@ export class SubjectOperationExecutor {
      */
     protected relationUpdateSubjects: Subject[];
 
-    /**
-     * Query runner used to execute queries.
-     */
-    protected queryRunner: QueryRunner;
-
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
     constructor(protected connection: Connection,
                 protected transactionEntityManager: EntityManager,
-                protected queryRunnerProvider: QueryRunnerProvider) {
+                protected queryRunner: QueryRunner) {
     }
 
     // -------------------------------------------------------------------------
@@ -103,12 +97,10 @@ export class SubjectOperationExecutor {
         let isTransactionStartedByItself = false;
         try {
 
-            this.queryRunner = await this.queryRunnerProvider.provide();
-
             // open transaction if its not opened yet
-            if (!this.queryRunner.isTransactionActive()) {
+            if (!this.queryRunner.isTransactionActive) {
                 isTransactionStartedByItself = true;
-                await this.queryRunner.beginTransaction();
+                await this.queryRunner.startTransaction();
             }
 
             // broadcast "before" events before we start updating

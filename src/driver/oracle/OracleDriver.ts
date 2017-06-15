@@ -1,62 +1,109 @@
 import {Driver} from "../Driver";
 import {ConnectionIsNotSetError} from "../error/ConnectionIsNotSetError";
-import {DriverOptions} from "../DriverOptions";
-import {DatabaseConnection} from "../DatabaseConnection";
 import {DriverPackageNotInstalledError} from "../error/DriverPackageNotInstalledError";
-import {DriverUtils} from "../DriverUtils";
-import {Logger} from "../../logger/Logger";
-import {QueryRunner} from "../../query-runner/QueryRunner";
 import {OracleQueryRunner} from "./OracleQueryRunner";
-import {ColumnTypes} from "../../metadata/types/ColumnTypes";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {DriverOptionNotSetError} from "../error/DriverOptionNotSetError";
-import {DataTransformationUtils} from "../../util/DataTransformationUtils";
+import {DataUtils} from "../../util/DataUtils";
 import {PlatformTools} from "../../platform/PlatformTools";
-import {NamingStrategyInterface} from "../../naming-strategy/NamingStrategyInterface";
-import {LazyRelationsWrapper} from "../../lazy-loading/LazyRelationsWrapper";
 import {Connection} from "../../connection/Connection";
-import {SchemaBuilder} from "../../schema-builder/SchemaBuilder";
+import {RdbmsSchemaBuilder} from "../../schema-builder/RdbmsSchemaBuilder";
 import {OracleConnectionOptions} from "./OracleConnectionOptions";
+import {MappedColumnTypes} from "../types/MappedColumnTypes";
+import {ColumnType} from "../types/ColumnTypes";
 
 /**
- * Organizes communication with Oracle DBMS.
+ * Organizes communication with Oracle RDBMS.
  *
  * todo: this driver is not 100% finished yet, need to fix all issues that are left
  */
 export class OracleDriver implements Driver {
 
     // -------------------------------------------------------------------------
-    // Protected Properties
+    // Public Properties
     // -------------------------------------------------------------------------
 
     /**
-     * Oracle library.
+     * Connection used by driver.
+     */
+    connection: Connection;
+
+    /**
+     * Connection options.
+     */
+    options: OracleConnectionOptions;
+
+    /**
+     * Underlying oracle library.
      */
     oracle: any;
 
     /**
-     * Connection to oracle database.
+     * Database connection pool created by underlying driver.
      */
-    protected databaseConnection: DatabaseConnection|undefined;
+    pool: any;
+
+    // -------------------------------------------------------------------------
+    // Public Implemented Properties
+    // -------------------------------------------------------------------------
 
     /**
-     * Oracle pool.
+     * Gets list of supported column data types by a driver.
+     *
+     * @see https://www.techonthenet.com/oracle/datatypes.php
+     * @see https://docs.oracle.com/cd/B28359_01/server.111/b28318/datatype.htm#CNCPT012
      */
-    protected pool: any;
+    supportedDataTypes: ColumnType[] = [
+        "char",
+        "nchar",
+        "nvarchar2",
+        "varchar2",
+        "long",
+        "raw",
+        "long raw",
+        "number",
+        "numeric",
+        "dec",
+        "decimal",
+        "integer",
+        "int",
+        "smallint",
+        "real",
+        "double precision",
+        "date",
+        "timestamp",
+        "timestamp with time zone",
+        "timestamp with local time zone",
+        "interval year",
+        "interval day",
+        "bfile",
+        "blob",
+        "clob",
+        "nclob",
+        "rowid",
+        "urowid"
+    ];
 
     /**
-     * Pool of database connections.
+     * Orm has special columns and we need to know what database column types should be for those types.
+     * Column types are driver dependant.
      */
-    protected databaseConnectionPool: DatabaseConnection[] = [];
-
-    protected options: OracleConnectionOptions;
+    mappedDataTypes: MappedColumnTypes = {
+        createDate: "datetime",
+        updateDate: "datetime",
+        version: "number",
+        treeLevel: "number",
+        migrationName: "varchar",
+        migrationTimestamp: "timestamp",
+    };
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(protected connection: Connection) {
+    constructor(connection: Connection) {
+        this.connection = connection;
 
         // Object.assign(connection.options, DriverUtils.buildDriverOptions(connection.options)); // todo: do it better way
 
@@ -72,6 +119,8 @@ export class OracleDriver implements Driver {
 
         // load oracle package
         this.loadDependencies();
+
+        // extra oracle setup
         this.oracle.outFormat = this.oracle.OBJECT;
     }
 
@@ -110,55 +159,30 @@ export class OracleDriver implements Driver {
      * Closes connection with the database.
      */
     disconnect(): Promise<void> {
-        if (!this.databaseConnection && !this.pool)
-            throw new ConnectionIsNotSetError("oracle");
+        if (!this.pool)
+            return Promise.reject(new ConnectionIsNotSetError("oracle"));
 
         return new Promise<void>((ok, fail) => {
             const handler = (err: any) => err ? fail(err) : ok();
 
             // if pooling is used, then disconnect from it
-            if (this.pool) {
-                this.pool.close(handler);
-                this.pool = undefined;
-                this.databaseConnectionPool = [];
-            }
-
-            // if single connection is opened, then close it
-            if (this.databaseConnection) {
-                this.databaseConnection.connection.close(handler);
-                this.databaseConnection = undefined;
-            }
+            this.pool.close(handler);
+            this.pool = undefined;
         });
     }
 
     /**
-     * Synchronizes database schema (creates tables, indices, etc).
+     * Creates a schema builder used to build and sync a schema.
      */
-    syncSchema(): Promise<void> {
-        const schemaBuilder = new SchemaBuilder(this.connection);
-        return schemaBuilder.build();
+    createSchemaBuilder() {
+        return new RdbmsSchemaBuilder(this.connection);
     }
 
     /**
-     * Creates a query runner used for common queries.
+     * Creates a query runner used to execute database queries.
      */
-    async createQueryRunner(): Promise<QueryRunner> {
-        if (!this.databaseConnection && !this.pool)
-            return Promise.reject(new ConnectionIsNotSetError("oracle"));
-
-        const databaseConnection = await this.retrieveDatabaseConnection();
-        return new OracleQueryRunner(this.connection, databaseConnection);
-    }
-
-    /**
-     * Access to the native implementation of the database.
-     */
-    nativeInterface() {
-        return {
-            driver: this.oracle,
-            connection: this.databaseConnection ? this.databaseConnection.connection : undefined,
-            pool: this.pool
-        };
+    createQueryRunner() {
+        return new OracleQueryRunner(this);
     }
 
     /**
@@ -180,21 +204,21 @@ export class OracleDriver implements Driver {
     /**
      * Escapes a column name.
      */
-    escapeColumnName(columnName: string): string {
-        return `"${columnName}"`; // "`" + columnName + "`";
+    escapeColumn(columnName: string): string {
+        return `"${columnName}"`;
     }
 
     /**
      * Escapes an alias.
      */
-    escapeAliasName(aliasName: string): string {
+    escapeAlias(aliasName: string): string {
         return `"${aliasName}"`;
     }
 
     /**
      * Escapes a table name.
      */
-    escapeTableName(tableName: string): string {
+    escapeTable(tableName: string): string {
         return `"${tableName}"`;
     }
 
@@ -203,30 +227,25 @@ export class OracleDriver implements Driver {
      */
     preparePersistentValue(value: any, columnMetadata: ColumnMetadata): any {
         if (value === null || value === undefined)
-            return null;
+            return value;
 
-        switch (columnMetadata.type) {
-            case ColumnTypes.BOOLEAN:
-                return value === true ? 1 : 0;
+        if (columnMetadata.type === Boolean) {
+            return value === true ? 1 : 0;
 
-            case ColumnTypes.DATE:
-                return DataTransformationUtils.mixedDateToDateString(value);
+        } else if (columnMetadata.type === "date") {
+            return DataUtils.mixedDateToDateString(value);
 
-            case ColumnTypes.TIME:
-                return DataTransformationUtils.mixedDateToTimeString(value);
+        } else if (columnMetadata.type === "time") {
+            return DataUtils.mixedDateToTimeString(value);
 
-            case ColumnTypes.DATETIME:
-                if (columnMetadata.localTimezone) {
-                    return DataTransformationUtils.mixedDateToDatetimeString(value);
-                } else {
-                    return DataTransformationUtils.mixedDateToUtcDatetimeString(value);
-                }
+        } else if (columnMetadata.type === "datetime") {
+            return DataUtils.mixedDateToUtcDatetimeString(value);
 
-            case ColumnTypes.JSON:
-                return JSON.stringify(value);
+        } else if (columnMetadata.type === "json") {
+            return JSON.stringify(value);
 
-            case ColumnTypes.SIMPLE_ARRAY:
-                return DataTransformationUtils.simpleArrayToString(value);
+        } else if (columnMetadata.type === "simple-array") {
+            return DataUtils.simpleArrayToString(value);
         }
 
         return value;
@@ -236,27 +255,67 @@ export class OracleDriver implements Driver {
      * Prepares given value to a value to be persisted, based on its column type or metadata.
      */
     prepareHydratedValue(value: any, columnMetadata: ColumnMetadata): any {
-        switch (columnMetadata.type) {
-            case ColumnTypes.BOOLEAN:
-                return value ? true : false;
+        if (columnMetadata.type === Boolean) {
+            return value ? true : false;
 
-            case ColumnTypes.DATETIME:
-                return DataTransformationUtils.normalizeHydratedDate(value, columnMetadata.localTimezone === true);
+        } else if (columnMetadata.type === "datetime") {
+            return DataUtils.normalizeHydratedDate(value);
 
-            case ColumnTypes.DATE:
-                return DataTransformationUtils.mixedDateToDateString(value);
+        } else if (columnMetadata.type === "date") {
+            return DataUtils.mixedDateToDateString(value);
 
-            case ColumnTypes.TIME:
-                return DataTransformationUtils.mixedTimeToString(value);
+        } else if (columnMetadata.type === "time") {
+            return DataUtils.mixedTimeToString(value);
 
-            case ColumnTypes.JSON:
-                return JSON.parse(value);
+        } else if (columnMetadata.type === "json") {
+            return JSON.parse(value);
 
-            case ColumnTypes.SIMPLE_ARRAY:
-                return DataTransformationUtils.stringToSimpleArray(value);
+        } else if (columnMetadata.type === "simple-array") {
+            return DataUtils.stringToSimpleArray(value);
         }
 
         return value;
+    }
+
+    /**
+     * Creates a database type from a given column metadata.
+     */
+    normalizeType(column: ColumnMetadata): string {
+        let type = "";
+        if (column.type === Number) {
+            type += "integer";
+
+        } else if (column.type === String) {
+            type += "nvarchar2";
+
+        } else if (column.type === Date) {
+            type += "timestamp(0)";
+
+        } else if (column.type === Boolean) {
+            type += "number(1)";
+
+        } else if (column.type === Object) {
+            type += "text";
+
+        } else if (column.type === "simple-array") {
+            type += "text";
+
+        } else {
+            type += column.type;
+        }
+        if (column.length) {
+            type += "(" + column.length + ")";
+
+        } else if (column.precision && column.scale) {
+            type += "(" + column.precision + "," + column.scale + ")";
+
+        } else if (column.precision) {
+            type += "(" + column.precision + ")";
+
+        } else if (column.scale) {
+            type += "(" + column.scale + ")";
+        }
+        return type;
     }
 
     // -------------------------------------------------------------------------
@@ -264,59 +323,13 @@ export class OracleDriver implements Driver {
     // -------------------------------------------------------------------------
 
     /**
-     * Retrieves a new database connection.
-     * If pooling is enabled then connection from the pool will be retrieved.
-     * Otherwise active connection will be returned.
-     */
-    protected retrieveDatabaseConnection(): Promise<DatabaseConnection> {
-
-        if (this.pool) {
-            return new Promise((ok, fail) => {
-                this.pool.getConnection((err: any, connection: any) => {
-                    if (err)
-                        return fail(err);
-
-                    let dbConnection = this.databaseConnectionPool.find(dbConnection => dbConnection.connection === connection);
-                    if (!dbConnection) {
-                        dbConnection = {
-                            id: this.databaseConnectionPool.length,
-                            connection: connection,
-                            isTransactionActive: false
-                        };
-                        dbConnection.releaseCallback = () => {
-                            return new Promise<void>((ok, fail) => {
-                                connection.close((err: any) => {
-                                    if (err)
-                                        return fail(err);
-
-                                    if (this.pool && dbConnection) {
-                                        this.databaseConnectionPool.splice(this.databaseConnectionPool.indexOf(dbConnection), 1);
-                                    }
-                                    ok();
-                                });
-                            });
-                        };
-                        this.databaseConnectionPool.push(dbConnection);
-                    }
-                    ok(dbConnection);
-                });
-            });
-        }
-
-        if (this.databaseConnection)
-            return Promise.resolve(this.databaseConnection);
-
-        throw new ConnectionIsNotSetError("oracle");
-    }
-
-    /**
-     * If driver dependency is not given explicitly, then try to load it via "require".
+     * Loads all driver dependencies.
      */
     protected loadDependencies(): void {
         try {
             this.oracle = PlatformTools.load("oracledb");
 
-        } catch (e) { // todo: better error for browser env
+        } catch (e) {
             throw new DriverPackageNotInstalledError("Oracle", "oracledb");
         }
     }

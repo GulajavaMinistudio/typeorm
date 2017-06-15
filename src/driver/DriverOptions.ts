@@ -1,4 +1,4 @@
-import {DatabaseType} from "./DatabaseType";
+import {DatabaseType} from "./types/DatabaseType";
 
 /**
  * Connectivity options used to connect to the database, and other database-driver-specific options.
@@ -56,15 +56,6 @@ export interface DriverOptions {
      * Storage type or path to the storage (used for SQLite databases).
      */
     storage?: string;
-
-    /**
-     * Indicates if connection pooling should be used or not.
-     * Be default it is enabled if its supported by a platform.
-     * Set to false to disable it.
-     *
-     * @todo: rename to disablePool? What about mongodb pool?
-     */
-    usePool?: boolean;
 
     /**
      * Extra connection options to be passed to the underlying driver.

@@ -36,11 +36,23 @@ Now naming strategy should be registered by passing naming strategy instance dir
 * env variable names for connection were changed (`TYPEORM_DRIVER_TYPE` has been renamed to `TYPEORM_CONNECTION`, some other renaming).
 More env variable names you can find in `ConnectionOptionsEnvReader` class.
 * some api changes in `ConnectionManager` and `createConnection` / `createConnections` methods of typeorm main entrypoint
+* `usePool` option has been removed from connection options. Now connections are working only with connection pooling
+* `simple_array` column type now is called `simple-array`
+* some column types were removed. Now orm uses directly column types of underlying database
+* now `number` type in column definitions (like `@Column() likes: number`) maps to `integer` instead of `double` as before.
+ This is more programmatic design. If you need to store float-pointing values there define a type explicitly
+* `fixedLength` in column options has been removed. Now actual column types can be used, e.g. `@Column("char")` or `@Column("varchar")`
+* `timezone` option has been removed from column options. Now corresponding database types can be used instead
+* `localTimezone` has been removed from the column options
+* `skipSchemaSync` in entity options has been renamed to `skipSync`
+* `setLimit` and `setOffset` in `QueryBuilder` were renamed into `limit` and `offset`
+* `nativeInterface` has been removed from a driver interface and implementations. 
+Now 
+* now typeorm works with the latest version of mssql (version 4)
 
-### OTHER API CHANGES
+### DEPRECATIONS
 
-* moved `query`, `transaction` and `createQueryBuilder` to the `Connection`. 
-`EntityManager` now simply use them from the connection.
+* `Embedded` decorator is deprecated now. use `@Column(type => SomeEmbedded)` instead now
 
 ### NEW FEATURES
 
@@ -51,6 +63,14 @@ More env variable names you can find in `ConnectionOptionsEnvReader` class.
 * now relations are supported inside embeds
 * now relations for multiple primary keys are generated properly
 * now ormconfig is read from `.env`, `.js`, `.json`, `.yml`, `.xml` formats
+* all database-specific types are supported now
+
+### OTHER API CHANGES
+
+* moved `query`, `transaction` and `createQueryBuilder` to the `Connection`. 
+`EntityManager` now simply use them from the connection.
+* refactored how query runner works, removed query runner provider
+* fixed some issues with sqlite, sqlite now strongly works on a single connection 
 
 ### BUG FIXES
 

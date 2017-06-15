@@ -1,10 +1,7 @@
 import {QueryRunner} from "../../query-runner/QueryRunner";
-import {DatabaseConnection} from "../DatabaseConnection";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {TransactionAlreadyStartedError} from "../error/TransactionAlreadyStartedError";
 import {TransactionNotStartedError} from "../error/TransactionNotStartedError";
-import {Logger} from "../../logger/Logger";
-import {DataTypeNotSupportedByDriverError} from "../error/DataTypeNotSupportedByDriverError";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
@@ -12,8 +9,11 @@ import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {WebsqlDriver} from "./WebsqlDriver";
-import {ColumnType} from "../../metadata/types/ColumnTypes";
-import {Connection} from "../../connection/Connection";
+
+/**
+ * Declare a global function that is only available in browsers that support WebSQL.
+ */
+declare function openDatabase(...params: any[]): any;
 
 /**
  * Runs queries on a single websql database connection.
@@ -21,21 +21,39 @@ import {Connection} from "../../connection/Connection";
 export class WebsqlQueryRunner implements QueryRunner {
 
     // -------------------------------------------------------------------------
-    // Protected Properties
+    // Public Implemented Properties
     // -------------------------------------------------------------------------
 
     /**
      * Indicates if connection for this query runner is released.
      * Once its released, query runner cannot run queries anymore.
      */
-    protected isReleased = false;
+    isReleased = false;
+
+    /**
+     * Indicates if transaction is in progress.
+     */
+    isTransactionActive = false;
+
+    // -------------------------------------------------------------------------
+    // Protected Properties
+    // -------------------------------------------------------------------------
+
+    /**
+     * Real database connection from a connection pool used to perform queries.
+     */
+    protected databaseConnection: any;
+
+    /**
+     * Promise used to obtain a database connection for a first time.
+     */
+    protected databaseConnectionPromise: Promise<any>;
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(protected connection: Connection,
-                protected databaseConnection: DatabaseConnection) {
+    constructor(protected driver: WebsqlDriver) {
     }
 
     // -------------------------------------------------------------------------
@@ -43,16 +61,40 @@ export class WebsqlQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     /**
-     * Releases database connection. This is needed when using connection pooling.
-     * If connection is not from a pool, it should not be released.
-     * You cannot use this class's methods after its released.
+     * Creates/uses database connection from the connection pool to perform further operations.
+     * Returns obtained database connection.
+     */
+    connect(): Promise<any> {
+        if (this.databaseConnection)
+            return Promise.resolve(this.databaseConnection);
+
+        if (this.databaseConnectionPromise)
+            return this.databaseConnectionPromise;
+
+        const options = Object.assign({}, {
+            database: this.driver.options.database,
+        }, this.driver.options.extra || {});
+
+        this.databaseConnectionPromise = new Promise<void>((ok, fail) => {
+            this.databaseConnection = openDatabase(
+                options.database,
+                options.version,
+                options.description,
+                options.size,
+            );
+            ok(this.databaseConnection);
+        });
+
+        return this.databaseConnectionPromise;
+    }
+
+    /**
+     * Releases used database connection.
+     * You cannot use query runner methods once its released.
      */
     release(): Promise<void> {
-        if (this.databaseConnection.releaseCallback) {
-            this.isReleased = true;
-            return this.databaseConnection.releaseCallback();
-        }
-
+        this.isReleased = true;
+        // todo: implement closing
         return Promise.resolve();
     }
 
@@ -64,7 +106,7 @@ export class WebsqlQueryRunner implements QueryRunner {
             throw new QueryRunnerAlreadyReleasedError();
 
         // await this.query(`PRAGMA foreign_keys = OFF;`);
-        await this.beginTransaction();
+        await this.startTransaction();
         try {
             const selectDropsQuery = `select 'drop table ' || name || ';' as query from sqlite_master where type = 'table' and name != 'sqlite_sequence'`;
             const dropQueries: ObjectLiteral[] = await this.query(selectDropsQuery);
@@ -75,8 +117,6 @@ export class WebsqlQueryRunner implements QueryRunner {
             await this.rollbackTransaction();
             throw error;
 
-        } finally {
-            await this.release();
             // await this.query(`PRAGMA foreign_keys = ON;`);
         }
     }
@@ -84,50 +124,45 @@ export class WebsqlQueryRunner implements QueryRunner {
     /**
      * Starts transaction.
      */
-    async beginTransaction(): Promise<void> {
+    async startTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        if (this.databaseConnection.isTransactionActive)
+        if (this.isTransactionActive)
             throw new TransactionAlreadyStartedError();
 
-        this.databaseConnection.isTransactionActive = true;
+        this.isTransactionActive = true;
         // await this.query("BEGIN TRANSACTION");
     }
 
     /**
      * Commits transaction.
+     * Error will be thrown if transaction was not started.
      */
     async commitTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        if (!this.databaseConnection.isTransactionActive)
+        if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
         // await this.query("COMMIT");
-        this.databaseConnection.isTransactionActive = false;
+        this.isTransactionActive = false;
     }
 
     /**
      * Rollbacks transaction.
+     * Error will be thrown if transaction was not started.
      */
     async rollbackTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        if (!this.databaseConnection.isTransactionActive)
+        if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
         // await this.query("ROLLBACK");
-        this.databaseConnection.isTransactionActive = false;
-    }
-
-    /**
-     * Checks if transaction is in progress.
-     */
-    isTransactionActive(): boolean {
-        return this.databaseConnection.isTransactionActive;
+        this.isTransactionActive = false;
     }
 
     /**
@@ -137,11 +172,11 @@ export class WebsqlQueryRunner implements QueryRunner {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        return new Promise((ok, fail) => {
+        return new Promise(async (ok, fail) => {
 
-            this.connection.logger.logQuery(query, parameters);
-            const db = this.databaseConnection.connection;
-            // todo: check if transaction is not active
+            this.driver.connection.logger.logQuery(query, parameters);
+            const db = await this.connect();
+            // todo(dima): check if transaction is not active
             db.transaction((tx: any) => {
                 tx.executeSql(query, parameters, (tx: any, result: any) => {
                     const rows = Object
@@ -151,8 +186,8 @@ export class WebsqlQueryRunner implements QueryRunner {
                     ok(rows);
 
                 }, (tx: any, err: any) => {
-                    this.connection.logger.logFailedQuery(query, parameters);
-                    this.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters);
+                    this.driver.connection.logger.logQueryError(err);
                     return fail(err);
                 });
             });
@@ -160,22 +195,23 @@ export class WebsqlQueryRunner implements QueryRunner {
     }
 
     /**
-     * Insert a new row into given table.
+     * Insert a new row with given values into the given table.
+     * Returns value of the generated column if given and generate column exist in the table.
      */
     async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
         const keys = Object.keys(keyValues);
-        const columns = keys.map(key => this.connection.driver.escapeColumnName(key)).join(", ");
+        const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map((key, index) => "$" + (index + 1)).join(",");
-        const sql = columns.length > 0 ? (`INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(${columns}) VALUES (${values})`) : `INSERT INTO ${this.connection.driver.escapeTableName(tableName)} DEFAULT VALUES`;
+        const sql = columns.length > 0 ? (`INSERT INTO "${tableName}"(${columns}) VALUES (${values})`) : `INSERT INTO "${tableName}" DEFAULT VALUES`;
         const parameters = keys.map(key => keyValues[key]);
 
-        return new Promise<any[]>((ok, fail) => {
-            this.connection.logger.logQuery(sql, parameters);
+        return new Promise<any[]>(async (ok, fail) => {
+            this.driver.connection.logger.logQuery(sql, parameters);
 
-            const db = this.databaseConnection.connection;
+            const db = await this.connect();
             // todo: check if transaction is not active
             db.transaction((tx: any) => {
                 tx.executeSql(sql, parameters, (tx: any, result: any) => {
@@ -184,8 +220,8 @@ export class WebsqlQueryRunner implements QueryRunner {
                     ok();
 
                 }, (tx: any, err: any) => {
-                    this.connection.logger.logFailedQuery(sql, parameters);
-                    this.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(sql, parameters);
+                    this.driver.connection.logger.logQueryError(err);
                     return fail(err);
                 });
             });
@@ -201,7 +237,7 @@ export class WebsqlQueryRunner implements QueryRunner {
 
         const updateValues = this.parametrize(valuesMap).join(", ");
         const conditionString = this.parametrize(conditions, Object.keys(valuesMap).length).join(" AND ");
-        const query = `UPDATE ${this.connection.driver.escapeTableName(tableName)} SET ${updateValues} ${conditionString ? (" WHERE " + conditionString) : ""}`;
+        const query = `UPDATE "${tableName}" SET ${updateValues} ${conditionString ? (" WHERE " + conditionString) : ""}`;
         const updateParams = Object.keys(valuesMap).map(key => valuesMap[key]);
         const conditionParams = Object.keys(conditions).map(key => conditions[key]);
         const allParameters = updateParams.concat(conditionParams);
@@ -228,7 +264,7 @@ export class WebsqlQueryRunner implements QueryRunner {
         const conditionString = typeof conditions === "string" ? conditions : this.parametrize(conditions).join(" AND ");
         const parameters = conditions instanceof Object ? Object.keys(conditions).map(key => (conditions as ObjectLiteral)[key]) : maybeParameters;
 
-        const sql = `DELETE FROM ${this.connection.driver.escapeTableName(tableName)} WHERE ${conditionString}`;
+        const sql = `DELETE FROM "${tableName}" WHERE ${conditionString}`;
         await this.query(sql, parameters);
     }
 
@@ -241,16 +277,16 @@ export class WebsqlQueryRunner implements QueryRunner {
 
         let sql = "";
         if (hasLevel) {
-            sql = `INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(ancestor, descendant, level) ` +
-                `SELECT ancestor, ${newEntityId}, level + 1 FROM ${this.connection.driver.escapeTableName(tableName)} WHERE descendant = ${parentId} ` +
+            sql = `INSERT INTO "${tableName}"("ancestor", "descendant", "level") ` +
+                `SELECT "ancestor", ${newEntityId}, "level" + 1 FROM "${tableName}" WHERE "descendant" = ${parentId} ` +
                 `UNION ALL SELECT ${newEntityId}, ${newEntityId}, 1`;
         } else {
-            sql = `INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(ancestor, descendant) ` +
-                `SELECT ancestor, ${newEntityId} FROM ${this.connection.driver.escapeTableName(tableName)} WHERE descendant = ${parentId} ` +
+            sql = `INSERT INTO "${tableName}"("ancestor", "descendant") ` +
+                `SELECT "ancestor", ${newEntityId} FROM "${tableName}" WHERE "descendant" = ${parentId} ` +
                 `UNION ALL SELECT ${newEntityId}, ${newEntityId}`;
         }
         await this.query(sql);
-        const results: ObjectLiteral[] = await this.query(`SELECT MAX(level) as level FROM ${tableName} WHERE descendant = ${parentId}`);
+        const results: ObjectLiteral[] = await this.query(`SELECT MAX("level") as "level" FROM ${tableName} WHERE "descendant" = ${parentId}`);
         return results && results[0] && results[0]["level"] ? parseInt(results[0]["level"]) + 1 : 1;
     }
 
@@ -743,85 +779,10 @@ export class WebsqlQueryRunner implements QueryRunner {
     }
 
     /**
-     * Creates a database type from a given column metadata.
-     */
-    normalizeType(typeOptions: { type: ColumnType, length?: string|number, precision?: number, scale?: number, timezone?: boolean, fixedLength?: boolean }): string {
-        switch (typeOptions.type) {
-            case "string":
-                return "character varying(" + (typeOptions.length ? typeOptions.length : 255) + ")";
-            case "text":
-                return "text";
-            case "boolean":
-                return "boolean";
-            case "integer":
-            case "int":
-                return "integer";
-            case "smallint":
-                return "smallint";
-            case "bigint":
-                return "bigint";
-            case "float":
-                return "real";
-            case "double":
-            case "number":
-                return "double precision";
-            case "decimal":
-                if (typeOptions.precision && typeOptions.scale) {
-                    return `decimal(${typeOptions.precision},${typeOptions.scale})`;
-
-                } else if (typeOptions.scale) {
-                    return `decimal(${typeOptions.scale})`;
-
-                } else if (typeOptions.precision) {
-                    return `decimal(${typeOptions.precision})`;
-
-                } else {
-                    return "decimal";
-
-                }
-            case "date":
-                return "date";
-            case "time":
-                if (typeOptions.timezone) {
-                    return "time with time zone";
-                } else {
-                    return "time without time zone";
-                }
-            case "datetime":
-                if (typeOptions.timezone) {
-                    return "timestamp with time zone";
-                } else {
-                    return "timestamp without time zone";
-                }
-            case "json":
-                return "json";
-            case "simple_array":
-                return typeOptions.length ? "character varying(" + typeOptions.length + ")" : "text";
-        }
-
-        throw new DataTypeNotSupportedByDriverError(typeOptions.type, "WebSQL");
-    }
-
-    /**
-     * Checks if "DEFAULT" values in the column metadata and in the database schema are equal.
-     */
-    compareDefaultValues(columnMetadataValue: any, databaseValue: any): boolean {
-
-        if (typeof columnMetadataValue === "number")
-            return columnMetadataValue === parseInt(databaseValue);
-        if (typeof columnMetadataValue === "boolean")
-            return columnMetadataValue === (!!databaseValue || databaseValue === "false");
-        if (typeof columnMetadataValue === "function")
-            return columnMetadataValue() === databaseValue;
-
-        return columnMetadataValue === databaseValue;
-    }
-
-    /**
      * Truncates table.
      */
     async truncate(tableName: string): Promise<void> {
-        await this.query(`DELETE FROM ${this.connection.driver.escapeTableName(tableName)}`);
+        await this.query(`DELETE FROM "${tableName}"`);
     }
 
     // -------------------------------------------------------------------------
@@ -832,7 +793,7 @@ export class WebsqlQueryRunner implements QueryRunner {
      * Parametrizes given object of values. Used to create column=value queries.
      */
     protected parametrize(objectLiteral: ObjectLiteral, startIndex: number = 0): string[] {
-        return Object.keys(objectLiteral).map((key, index) => this.connection.driver.escapeColumnName(key) + "=$" + (startIndex + index + 1));
+        return Object.keys(objectLiteral).map((key, index) => `"${key}"` + "=$" + (startIndex + index + 1));
     }
 
     /**
@@ -841,7 +802,7 @@ export class WebsqlQueryRunner implements QueryRunner {
     protected buildCreateColumnSql(column: ColumnSchema): string {
         let c = "\"" + column.name + "\"";
         if (column instanceof ColumnMetadata) {
-            c += " " + this.normalizeType(column);
+            c += " " + this.driver.normalizeType(column);
         } else {
             c += " " + column.type;
         }

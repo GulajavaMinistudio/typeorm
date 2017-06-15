@@ -1,11 +1,7 @@
 import {QueryRunner} from "../../query-runner/QueryRunner";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
-import {Logger} from "../../logger/Logger";
-import {DatabaseConnection} from "../DatabaseConnection";
 import {TransactionAlreadyStartedError} from "../error/TransactionAlreadyStartedError";
 import {TransactionNotStartedError} from "../error/TransactionNotStartedError";
-import {SqliteDriver} from "./SqliteDriver";
-import {DataTypeNotSupportedByDriverError} from "../error/DataTypeNotSupportedByDriverError";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
@@ -13,9 +9,8 @@ import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
-import {ColumnType} from "../../metadata/types/ColumnTypes";
 import {RandomGenerator} from "../../util/RandomGenerator";
-import {Connection} from "../../connection/Connection";
+import {SqliteDriver} from "./SqliteDriver";
 
 /**
  * Runs queries on a single sqlite database connection.
@@ -26,21 +21,39 @@ import {Connection} from "../../connection/Connection";
 export class SqliteQueryRunner implements QueryRunner {
 
     // -------------------------------------------------------------------------
-    // Protected Properties
+    // Public Implemented Properties
     // -------------------------------------------------------------------------
 
     /**
      * Indicates if connection for this query runner is released.
      * Once its released, query runner cannot run queries anymore.
      */
-    protected isReleased = false;
+    isReleased = false;
+
+    /**
+     * Indicates if transaction is in progress.
+     */
+    isTransactionActive = false;
+
+    // -------------------------------------------------------------------------
+    // Protected Properties
+    // -------------------------------------------------------------------------
+
+    /**
+     * Real database connection from a connection pool used to perform queries.
+     */
+    protected databaseConnection: any;
+
+    /**
+     * Promise used to obtain a database connection for a first time.
+     */
+    protected databaseConnectionPromise: Promise<any>;
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(protected connection: Connection,
-                protected databaseConnection: DatabaseConnection) {
+    constructor(protected driver: SqliteDriver) {
     }
 
     // -------------------------------------------------------------------------
@@ -48,15 +61,18 @@ export class SqliteQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     /**
-     * Releases database connection. This is needed when using connection pooling.
-     * If connection is not from a pool, it should not be released.
+     * Creates/uses database connection from the connection pool to perform further operations.
+     * Returns obtained database connection.
+     */
+    connect(): Promise<any> {
+        return Promise.resolve(this.driver.databaseConnection);
+    }
+
+    /**
+     * Releases used database connection.
+     * We don't do anything here because sqlite do not support multiple connections thus query runners.
      */
     release(): Promise<void> {
-        if (this.databaseConnection.releaseCallback) {
-            this.isReleased = true;
-            return this.databaseConnection.releaseCallback();
-        }
-
         return Promise.resolve();
     }
 
@@ -68,7 +84,7 @@ export class SqliteQueryRunner implements QueryRunner {
             throw new QueryRunnerAlreadyReleasedError();
 
         await this.query(`PRAGMA foreign_keys = OFF;`);
-        await this.beginTransaction();
+        await this.startTransaction();
         try {
             const selectDropsQuery = `select 'drop table ' || name || ';' as query from sqlite_master where type = 'table' and name != 'sqlite_sequence'`;
             const dropQueries: ObjectLiteral[] = await this.query(selectDropsQuery);
@@ -80,7 +96,6 @@ export class SqliteQueryRunner implements QueryRunner {
             throw error;
 
         } finally {
-            await this.release();
             await this.query(`PRAGMA foreign_keys = ON;`);
         }
     }
@@ -88,47 +103,42 @@ export class SqliteQueryRunner implements QueryRunner {
     /**
      * Starts transaction.
      */
-    async beginTransaction(): Promise<void> {
+    async startTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
-        if (this.databaseConnection.isTransactionActive)
+        if (this.isTransactionActive)
             throw new TransactionAlreadyStartedError();
 
-        this.databaseConnection.isTransactionActive = true;
+        this.isTransactionActive = true;
         await this.query("BEGIN TRANSACTION");
     }
 
     /**
      * Commits transaction.
+     * Error will be thrown if transaction was not started.
      */
     async commitTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
-        if (!this.databaseConnection.isTransactionActive)
+        if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
         await this.query("COMMIT");
-        this.databaseConnection.isTransactionActive = false;
+        this.isTransactionActive = false;
     }
 
     /**
      * Rollbacks transaction.
+     * Error will be thrown if transaction was not started.
      */
     async rollbackTransaction(): Promise<void> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
-        if (!this.databaseConnection.isTransactionActive)
+        if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
         await this.query("ROLLBACK");
-        this.databaseConnection.isTransactionActive = false;
-    }
-
-    /**
-     * Checks if transaction is in progress.
-     */
-    isTransactionActive(): boolean {
-        return this.databaseConnection.isTransactionActive;
+        this.isTransactionActive = false;
     }
 
     /**
@@ -138,12 +148,13 @@ export class SqliteQueryRunner implements QueryRunner {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        return new Promise<any[]>((ok, fail) => {
-            this.connection.logger.logQuery(query, parameters);
-            this.databaseConnection.connection.all(query, parameters, (err: any, result: any) => {
+        return new Promise<any[]>(async (ok, fail) => {
+            this.driver.connection.logger.logQuery(query, parameters);
+            const databaseConnection = await this.connect();
+            databaseConnection.all(query, parameters, (err: any, result: any) => {
                 if (err) {
-                    this.connection.logger.logFailedQuery(query, parameters);
-                    this.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters);
+                    this.driver.connection.logger.logQueryError(err);
                     fail(err);
                 } else {
                     ok(result);
@@ -153,25 +164,27 @@ export class SqliteQueryRunner implements QueryRunner {
     }
 
     /**
-     * Insert a new row into given table.
+     * Insert a new row with given values into the given table.
+     * Returns value of the generated column if given and generate column exist in the table.
      */
     async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
         const keys = Object.keys(keyValues);
-        const columns = keys.map(key => this.connection.driver.escapeColumnName(key)).join(", ");
+        const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map((key, index) => "$" + (index + 1)).join(",");
-        const sql = columns.length > 0 ? (`INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(${columns}) VALUES (${values})`) : `INSERT INTO ${this.connection.driver.escapeTableName(tableName)} DEFAULT VALUES`;
+        const sql = columns.length > 0 ? (`INSERT INTO "${tableName}"(${columns}) VALUES (${values})`) : `INSERT INTO "${tableName}" DEFAULT VALUES`;
         const parameters = keys.map(key => keyValues[key]);
 
-        return new Promise<any[]>((ok, fail) => {
-            this.connection.logger.logQuery(sql, parameters);
+        return new Promise<any[]>(async (ok, fail) => {
+            this.driver.connection.logger.logQuery(sql, parameters);
             const __this = this;
-            this.databaseConnection.connection.run(sql, parameters, function (err: any): void {
+            const databaseConnection = await this.connect();
+            databaseConnection.run(sql, parameters, function (err: any): void {
                 if (err) {
-                    __this.connection.logger.logFailedQuery(sql, parameters);
-                    __this.connection.logger.logQueryError(err);
+                    __this.driver.connection.logger.logFailedQuery(sql, parameters);
+                    __this.driver.connection.logger.logQueryError(err);
                     fail(err);
                 } else {
                     if (generatedColumn)
@@ -192,7 +205,7 @@ export class SqliteQueryRunner implements QueryRunner {
 
         const updateValues = this.parametrize(valuesMap).join(", ");
         const conditionString = this.parametrize(conditions, Object.keys(valuesMap).length).join(" AND ");
-        const query = `UPDATE ${this.connection.driver.escapeTableName(tableName)} SET ${updateValues} ${conditionString ? (" WHERE " + conditionString) : ""}`;
+        const query = `UPDATE "${tableName}" SET ${updateValues} ${conditionString ? (" WHERE " + conditionString) : ""}`;
         const updateParams = Object.keys(valuesMap).map(key => valuesMap[key]);
         const conditionParams = Object.keys(conditions).map(key => conditions[key]);
         const allParameters = updateParams.concat(conditionParams);
@@ -219,7 +232,7 @@ export class SqliteQueryRunner implements QueryRunner {
         const conditionString = typeof conditions === "string" ? conditions : this.parametrize(conditions).join(" AND ");
         const parameters = conditions instanceof Object ? Object.keys(conditions).map(key => (conditions as ObjectLiteral)[key]) : maybeParameters;
 
-        const sql = `DELETE FROM ${this.connection.driver.escapeTableName(tableName)} WHERE ${conditionString}`;
+        const sql = `DELETE FROM "${tableName}" WHERE ${conditionString}`;
         await this.query(sql, parameters);
     }
 
@@ -232,12 +245,12 @@ export class SqliteQueryRunner implements QueryRunner {
 
         let sql = "";
         if (hasLevel) {
-            sql = `INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(ancestor, descendant, level) ` +
-                `SELECT ancestor, ${newEntityId}, level + 1 FROM ${this.connection.driver.escapeTableName(tableName)} WHERE descendant = ${parentId} ` +
+            sql = `INSERT INTO "${tableName}"("ancestor", "descendant", "level") ` +
+                `SELECT "ancestor", ${newEntityId}, "level" + 1 FROM "${tableName}" WHERE "descendant" = ${parentId} ` +
                 `UNION ALL SELECT ${newEntityId}, ${newEntityId}, 1`;
         } else {
-            sql = `INSERT INTO ${this.connection.driver.escapeTableName(tableName)}(ancestor, descendant) ` +
-                `SELECT ancestor, ${newEntityId} FROM ${this.connection.driver.escapeTableName(tableName)} WHERE descendant = ${parentId} ` +
+            sql = `INSERT INTO "${tableName}"("ancestor", "descendant") ` +
+                `SELECT "ancestor", ${newEntityId} FROM "${tableName}" WHERE "descendant" = ${parentId} ` +
                 `UNION ALL SELECT ${newEntityId}, ${newEntityId}`;
         }
         await this.query(sql);
@@ -317,7 +330,7 @@ export class SqliteQueryRunner implements QueryRunner {
                 const columnForeignKeys = dbForeignKeys
                     .filter(foreignKey => foreignKey["from"] === dbColumn["name"])
                     .map(foreignKey => {
-                        // const keyName = this.connection.driver.namingStrategy.foreignKeyName(dbTable["name"], [foreignKey["from"]], foreignKey["table"], [foreignKey["to"]]);
+                        // const keyName = this.driver.namingStrategy.foreignKeyName(dbTable["name"], [foreignKey["from"]], foreignKey["table"], [foreignKey["to"]]);
                         // todo: figure out solution here, name should be same as naming strategy generates!
                         const key = `${dbTable["name"]}_${[foreignKey["from"]].join("_")}_${foreignKey["table"]}_${[foreignKey["to"]].join("_")}`;
                         const keyName = "fk_" + RandomGenerator.sha1(key).substr(0, 27);
@@ -737,85 +750,10 @@ export class SqliteQueryRunner implements QueryRunner {
     }
 
     /**
-     * Creates a database type from a given column metadata.
-     */
-    normalizeType(typeOptions: { type: ColumnType, length?: string|number, precision?: number, scale?: number, timezone?: boolean, fixedLength?: boolean }): string {
-        switch (typeOptions.type) {
-            case "string":
-                return "character varying(" + (typeOptions.length ? typeOptions.length : 255) + ")";
-            case "text":
-                return "text";
-            case "boolean":
-                return "boolean";
-            case "integer":
-            case "int":
-                return "integer";
-            case "smallint":
-                return "smallint";
-            case "bigint":
-                return "bigint";
-            case "float":
-                return "real";
-            case "double":
-            case "number":
-                return "double precision";
-            case "decimal":
-                if (typeOptions.precision && typeOptions.scale) {
-                    return `decimal(${typeOptions.precision},${typeOptions.scale})`;
-
-                } else if (typeOptions.scale) {
-                    return `decimal(${typeOptions.scale})`;
-
-                } else if (typeOptions.precision) {
-                    return `decimal(${typeOptions.precision})`;
-
-                } else {
-                    return "decimal";
-
-                }
-            case "date":
-                return "date";
-            case "time":
-                if (typeOptions.timezone) {
-                    return "time with time zone";
-                } else {
-                    return "time without time zone";
-                }
-            case "datetime":
-                if (typeOptions.timezone) {
-                    return "timestamp with time zone";
-                } else {
-                    return "timestamp without time zone";
-                }
-            case "json":
-                return "json";
-            case "simple_array":
-                return typeOptions.length ? "character varying(" + typeOptions.length + ")" : "text";
-        }
-
-        throw new DataTypeNotSupportedByDriverError(typeOptions.type, "SQLite");
-    }
-
-    /**
-     * Checks if "DEFAULT" values in the column metadata and in the database schema are equal.
-     */
-    compareDefaultValues(columnMetadataValue: any, databaseValue: any): boolean {
-
-        if (typeof columnMetadataValue === "number")
-            return columnMetadataValue === parseInt(databaseValue);
-        if (typeof columnMetadataValue === "boolean")
-            return columnMetadataValue === (!!databaseValue || databaseValue === "false");
-        if (typeof columnMetadataValue === "function")
-            return columnMetadataValue() === databaseValue;
-
-        return columnMetadataValue === databaseValue;
-    }
-
-    /**
      * Truncates table.
      */
     async truncate(tableName: string): Promise<void> {
-        await this.query(`DELETE FROM ${this.connection.driver.escapeTableName(tableName)}`);
+        await this.query(`DELETE FROM "${tableName}"`);
     }
 
     // -------------------------------------------------------------------------
@@ -826,7 +764,7 @@ export class SqliteQueryRunner implements QueryRunner {
      * Parametrizes given object of values. Used to create column=value queries.
      */
     protected parametrize(objectLiteral: ObjectLiteral, startIndex: number = 0): string[] {
-        return Object.keys(objectLiteral).map((key, index) => this.connection.driver.escapeColumnName(key) + "=$" + (startIndex + index + 1));
+        return Object.keys(objectLiteral).map((key, index) => `"${key}"` + "=$" + (startIndex + index + 1));
     }
 
     /**
@@ -835,7 +773,7 @@ export class SqliteQueryRunner implements QueryRunner {
     protected buildCreateColumnSql(column: ColumnSchema): string {
         let c = "\"" + column.name + "\"";
         if (column instanceof ColumnMetadata) {
-            c += " " + this.normalizeType(column);
+            c += " " + this.driver.normalizeType(column);
         } else {
             c += " " + column.type;
         }
@@ -845,6 +783,7 @@ export class SqliteQueryRunner implements QueryRunner {
             c += " UNIQUE";
         if (column.isGenerated === true) // don't use skipPrimary here since updates can update already exist primary without auto inc.
             c += " PRIMARY KEY AUTOINCREMENT";
+
         if (column.default !== undefined && column.default !== null) { // todo: same code in all drivers. make it DRY
             if (typeof column.default === "number") {
                 c += " DEFAULT " + column.default + "";

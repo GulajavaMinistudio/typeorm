@@ -1,42 +1,40 @@
 import {QueryRunner} from "../../query-runner/QueryRunner";
-import {DatabaseConnection} from "../DatabaseConnection";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
 import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
-import {ColumnType} from "../../metadata/types/ColumnTypes";
 import {
+    AggregationCursor,
+    BulkWriteOpResultObject,
+    Code,
+    Collection,
+    CollectionAggregationOptions,
+    CollectionBluckWriteOptions,
+    CollectionInsertManyOptions,
+    CollectionInsertOneOptions,
+    CollectionOptions,
+    CollStats,
+    CommandCursor,
     Cursor,
     Db,
-    Collection,
-    MongoCountPreferences,
-    CollectionAggregationOptions,
-    AggregationCursor,
-    CollectionBluckWriteOptions,
-    BulkWriteOpResultObject,
-    MongodbIndexOptions,
-    CollectionOptions,
     DeleteWriteOpResultObject,
     FindAndModifyWriteOpResultObject,
     FindOneAndReplaceOption,
     GeoHaystackSearchOptions,
     GeoNearOptions,
-    ReadPreference,
-    Code,
-    OrderedBulkOperation,
-    UnorderedBulkOperation,
-    InsertWriteOpResult,
-    CollectionInsertManyOptions,
-    CollectionInsertOneOptions,
     InsertOneWriteOpResult,
-    CommandCursor,
+    InsertWriteOpResult,
     MapReduceOptions,
+    MongoCountPreferences,
+    MongodbIndexOptions,
+    OrderedBulkOperation,
     ParallelCollectionScanOptions,
+    ReadPreference,
     ReplaceOneOptions,
-    UpdateWriteOpResult,
-    CollStats
+    UnorderedBulkOperation,
+    UpdateWriteOpResult
 } from "./typings";
 import {Connection} from "../../connection/Connection";
 
@@ -46,11 +44,33 @@ import {Connection} from "../../connection/Connection";
 export class MongoQueryRunner implements QueryRunner {
 
     // -------------------------------------------------------------------------
+    // Public Implemented Properties
+    // -------------------------------------------------------------------------
+
+    /**
+     * Indicates if connection for this query runner is released.
+     * Once its released, query runner cannot run queries anymore.
+     * Always false for mongodb since mongodb has a single query executor instance.
+     */
+    isReleased = false;
+
+    /**
+     * Indicates if transaction is active in this query executor.
+     * Always false for mongodb since mongodb does not support transactions.
+     */
+    isTransactionActive = false;
+
+    /**
+     * Real database connection from a connection pool used to perform queries.
+     */
+    databaseConnection: Db;
+
+    // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(protected connection: Connection,
-                protected databaseConnection: DatabaseConnection) {
+    constructor(protected connection: Connection, databaseConnection: Db) {
+        this.databaseConnection = databaseConnection;
     }
 
     // -------------------------------------------------------------------------
@@ -302,6 +322,12 @@ export class MongoQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     /**
+     * For MongoDB database we don't create connection, because its single connection already created by a driver.
+     */
+    async connect(): Promise<any> {
+    }
+
+    /**
      * For MongoDB database we don't release connection, because its single connection.
      */
     async release(): Promise<void> {
@@ -314,13 +340,13 @@ export class MongoQueryRunner implements QueryRunner {
      * (because it can clear all your database).
      */
     async clearDatabase(): Promise<void> {
-        await this.databaseConnection.connection.dropDatabase();
+        await this.databaseConnection.dropDatabase();
     }
 
     /**
      * Starts transaction.
      */
-    async beginTransaction(): Promise<void> {
+    async startTransaction(): Promise<void> {
         // transactions are not supported by mongodb driver, so simply don't do anything here
     }
 
@@ -339,13 +365,6 @@ export class MongoQueryRunner implements QueryRunner {
     }
 
     /**
-     * Checks if transaction is in progress.
-     */
-    isTransactionActive(): boolean {
-        return this.databaseConnection.isTransactionActive;
-    }
-
-    /**
      * Executes a given SQL query.
      */
     query(query: string, parameters?: any[]): Promise<any> {
@@ -353,11 +372,11 @@ export class MongoQueryRunner implements QueryRunner {
     }
 
     /**
-     * Insert a new row with given values into given table.
+     * Insert a new row with given values into the given table.
+     * Returns value of inserted object id.
      */
     async insert(collectionName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
         const results = await this.databaseConnection
-            .connection
             .collection(collectionName)
             .insertOne(keyValues);
 
@@ -369,7 +388,6 @@ export class MongoQueryRunner implements QueryRunner {
      */
     async update(collectionName: string, valuesMap: ObjectLiteral, conditions: ObjectLiteral): Promise<void> {
         await this.databaseConnection
-            .connection
             .collection(collectionName)
             .updateOne(conditions, valuesMap);
     }
@@ -392,7 +410,6 @@ export class MongoQueryRunner implements QueryRunner {
             throw new Error(`String condition is not supported by MongoDB driver.`);
 
         await this.databaseConnection
-            .connection
             .collection(collectionName)
             .deleteOne(conditions);
     }
@@ -646,25 +663,10 @@ export class MongoQueryRunner implements QueryRunner {
     }
 
     /**
-     * Creates a database type from a given column metadata.
-     */
-    normalizeType(typeOptions: { type: ColumnType, length?: string|number, precision?: number, scale?: number, timezone?: boolean, fixedLength?: boolean }): string {
-        throw new Error(`Schema update queries are not supported by MongoDB driver.`);
-    }
-
-    /**
-     * Checks if "DEFAULT" values in the column metadata and in the database schema are equal.
-     */
-    compareDefaultValues(columnMetadataValue: any, databaseValue: any): boolean {
-        throw new Error(`Schema update queries are not supported by MongoDB driver.`);
-    }
-
-    /**
      * Drops collection.
      */
     async truncate(collectionName: string): Promise<void> {
         await this.databaseConnection
-            .connection
             .dropCollection(collectionName);
     }
 
@@ -676,7 +678,7 @@ export class MongoQueryRunner implements QueryRunner {
      * Gets collection from the database with a given name.
      */
     protected getCollection(collectionName: string): Collection {
-        return (this.databaseConnection.connection as Db).collection(collectionName);
+        return this.databaseConnection.collection(collectionName);
     }
 
 }

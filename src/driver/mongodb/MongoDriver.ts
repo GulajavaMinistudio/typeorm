@@ -1,17 +1,17 @@
 import {Driver} from "../Driver";
 import {ConnectionIsNotSetError} from "../error/ConnectionIsNotSetError";
 import {DriverOptions} from "../DriverOptions";
-import {DatabaseConnection} from "../DatabaseConnection";
 import {DriverPackageNotInstalledError} from "../error/DriverPackageNotInstalledError";
-import {QueryRunner} from "../../query-runner/QueryRunner";
 import {MongoQueryRunner} from "./MongoQueryRunner";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {DriverOptionNotSetError} from "../error/DriverOptionNotSetError";
 import {PlatformTools} from "../../platform/PlatformTools";
-import {EntityMetadata} from "../../metadata/EntityMetadata";
 import {Connection} from "../../connection/Connection";
 import {MongoConnectionOptions} from "./MongoConnectionOptions";
+import {MappedColumnTypes} from "../types/MappedColumnTypes";
+import {ColumnType} from "../types/ColumnTypes";
+import {MongoSchemaBuilder} from "../../schema-builder/MongoSchemaBuilder";
 
 /**
  * Organizes communication with MongoDB.
@@ -24,25 +24,44 @@ export class MongoDriver implements Driver {
 
     /**
      * Mongodb does not require to dynamically create query runner each time,
-     * because it does not have a regular pool.
+     * because it does not have a regular connection pool as RDBMS systems have.
      */
-    queryRunner: MongoQueryRunner;
+    queryRunner?: MongoQueryRunner;
+
+    // -------------------------------------------------------------------------
+    // Public Implemented Properties
+    // -------------------------------------------------------------------------
+
+    /**
+     * Mongodb does not need to have column types because they are not used in schema sync.
+     */
+    supportedDataTypes: ColumnType[] = [];
+
+    /**
+     * Mongodb does not need to have a strong defined mapped column types because they are not used in schema sync.
+     */
+    mappedDataTypes: MappedColumnTypes = {
+        createDate: "int",
+        updateDate: "int",
+        version: "int",
+        treeLevel: "int",
+        migrationName: "int",
+        migrationTimestamp: "int",
+    };
 
     // -------------------------------------------------------------------------
     // Protected Properties
     // -------------------------------------------------------------------------
 
     /**
-     * Underlying mongodb driver.
+     * Connection options.
      */
-    protected mongodb: any;
+    protected options: MongoConnectionOptions;
 
     /**
-     * Connection to mongodb database provided by native driver.
+     * Underlying mongodb library.
      */
-    protected pool: any;
-    
-    protected options: MongoConnectionOptions;
+    protected mongodb: any;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -55,11 +74,11 @@ export class MongoDriver implements Driver {
         this.validateOptions(connection.options);
 
         // load mongodb package
-        this.mongodb = this.loadDependencies();
+        this.loadDependencies();
     }
 
     // -------------------------------------------------------------------------
-    // Public Overridden Methods
+    // Public Methods
     // -------------------------------------------------------------------------
 
     /**
@@ -67,16 +86,10 @@ export class MongoDriver implements Driver {
      */
     connect(): Promise<void> {
         return new Promise<void>((ok, fail) => {
-            this.mongodb.MongoClient.connect(this.buildConnectionUrl(), this.options.extra, (err: any, database: any) => {
+            this.mongodb.MongoClient.connect(this.buildConnectionUrl(), this.options.extra, (err: any, dbConnection: any) => {
                 if (err) return fail(err);
 
-                this.pool = database;
-                const databaseConnection: DatabaseConnection = {
-                    id: 1,
-                    connection: this.pool,
-                    isTransactionActive: false
-                };
-                this.queryRunner = new MongoQueryRunner(this.connection, databaseConnection);
+                this.queryRunner = new MongoQueryRunner(this.connection, dbConnection);
                 ok();
             });
         });
@@ -86,34 +99,28 @@ export class MongoDriver implements Driver {
      * Closes connection with the database.
      */
     async disconnect(): Promise<void> {
-        if (!this.pool)
-            throw new ConnectionIsNotSetError("mongodb");
-
         return new Promise<void>((ok, fail) => {
+            if (!this.queryRunner)
+                return fail(new ConnectionIsNotSetError("mongodb"));
+
             const handler = (err: any) => err ? fail(err) : ok();
-            this.pool.close(handler);
-            this.pool = undefined;
+            this.queryRunner.databaseConnection.close(handler);
+            this.queryRunner = undefined;
         });
     }
 
     /**
-     * Creates a query runner used for common queries.
+     * Creates a schema builder used to build and sync a schema.
      */
-    async createQueryRunner(): Promise<QueryRunner> {
-        if (!this.pool)
-            return Promise.reject(new ConnectionIsNotSetError("mongodb"));
-
-        return this.queryRunner;
+    createSchemaBuilder() {
+        return new MongoSchemaBuilder(this.connection);
     }
 
     /**
-     * Access to the native implementation of the database.
+     * Creates a query runner used to execute database queries.
      */
-    nativeInterface() {
-        return {
-            driver: this.mongodb,
-            connection: this.pool
-        };
+    createQueryRunner() {
+        return this.queryRunner!;
     }
 
     /**
@@ -127,21 +134,21 @@ export class MongoDriver implements Driver {
     /**
      * Escapes a column name.
      */
-    escapeColumnName(columnName: string): string {
+    escapeColumn(columnName: string): string {
         return columnName;
     }
 
     /**
      * Escapes an alias.
      */
-    escapeAliasName(aliasName: string): string {
+    escapeAlias(aliasName: string): string {
         return aliasName;
     }
 
     /**
      * Escapes a table name.
      */
-    escapeTableName(tableName: string): string {
+    escapeTable(tableName: string): string {
         return tableName;
     }
 
@@ -149,33 +156,6 @@ export class MongoDriver implements Driver {
      * Prepares given value to a value to be persisted, based on its column type and metadata.
      */
     preparePersistentValue(value: any, columnMetadata: ColumnMetadata): any {
-        if (value === null || value === undefined)
-            return null;
-
-        switch (columnMetadata.type) {
-            // case ColumnTypes.BOOLEAN:
-            //     return value === true ? 1 : 0;
-            //
-            // case ColumnTypes.DATE:
-            //     return DataTransformationUtils.mixedDateToDateString(value);
-            //
-            // case ColumnTypes.TIME:
-            //     return DataTransformationUtils.mixedDateToTimeString(value);
-            //
-            // case ColumnTypes.DATETIME:
-            //     if (columnMetadata.localTimezone) {
-            //         return DataTransformationUtils.mixedDateToDatetimeString(value);
-            //     } else {
-            //         return DataTransformationUtils.mixedDateToUtcDatetimeString(value);
-            //     }
-            //
-            // case ColumnTypes.JSON:
-            //     return JSON.stringify(value);
-            //
-            // case ColumnTypes.SIMPLE_ARRAY:
-            //     return DataTransformationUtils.simpleArrayToString(value);
-        }
-
         return value;
     }
 
@@ -183,36 +163,14 @@ export class MongoDriver implements Driver {
      * Prepares given value to a value to be persisted, based on its column type or metadata.
      */
     prepareHydratedValue(value: any, columnMetadata: ColumnMetadata): any {
-        switch (columnMetadata.type) {
-            // case ColumnTypes.BOOLEAN:
-            //     return value ? true : false;
-            //
-            // case ColumnTypes.JSON:
-            //     return JSON.parse(value);
-            //
-            // case ColumnTypes.SIMPLE_ARRAY:
-            //     return DataTransformationUtils.stringToSimpleArray(value);
-        }
-
-        // if (columnMetadata.isObjectId)
-        //     return new ObjectID(value);
-
         return value;
     }
 
     /**
-     * Synchronizes database schema (creates indices).
+     * Creates a database type from a given column metadata.
      */
-    async syncSchema(): Promise<void> {
-        const queryRunner = await this.createQueryRunner() as MongoQueryRunner;
-        const promises: Promise<any>[] = [];
-        await Promise.all(this.connection.entityMetadatas.map(metadata => {
-            metadata.indices.forEach(index => {
-                const options = { name: index.name };
-                promises.push(queryRunner.createCollectionIndex(metadata.tableName, index.columnNamesWithOrderingMap, options));
-            });
-        }));
-        await Promise.all(promises);
+    normalizeType(column: ColumnMetadata): string {
+        throw new Error(`MongoDB is schema-less, not supported by this driver.`);
     }
 
     // -------------------------------------------------------------------------
@@ -230,11 +188,11 @@ export class MongoDriver implements Driver {
     }
 
     /**
-     * If driver dependency is not given explicitly, then try to load it via "require".
+     * Loads all driver dependencies.
      */
     protected loadDependencies(): any {
         try {
-            return PlatformTools.load("mongodb");  // try to load native driver dynamically
+            this.mongodb = PlatformTools.load("mongodb");  // try to load native driver dynamically
 
         } catch (e) {
             throw new DriverPackageNotInstalledError("MongoDB", "mongodb");

@@ -2,8 +2,7 @@ import {ObjectLiteral} from "../common/ObjectLiteral";
 import {EntityMetadata} from "../metadata/EntityMetadata";
 import {ColumnMetadata} from "../metadata/ColumnMetadata";
 import {RelationMetadata} from "../metadata/RelationMetadata";
-import {ColumnTypes} from "../metadata/types/ColumnTypes";
-import {DataTransformationUtils} from "../util/DataTransformationUtils";
+import {DataUtils} from "../util/DataUtils";
 
 /**
  * Holds information about insert operation into junction table.
@@ -324,31 +323,26 @@ export class Subject {
             if (entityValue === undefined)
                 return false;
 
-            // normalize special values to make proper comparision
+            // normalize special values to make proper comparision (todo: arent they already normalized at this point?!)
             if (entityValue !== null && entityValue !== undefined) {
-                if (column.type === ColumnTypes.DATE) {
-                    entityValue = DataTransformationUtils.mixedDateToDateString(entityValue);
+                if (column.type === "date") {
+                    entityValue = DataUtils.mixedDateToDateString(entityValue);
 
-                } else if (column.type === ColumnTypes.TIME) {
-                    entityValue = DataTransformationUtils.mixedDateToTimeString(entityValue);
+                } else if (column.type === "time") {
+                    entityValue = DataUtils.mixedDateToTimeString(entityValue);
 
-                } else if (column.type === ColumnTypes.DATETIME) {
-                    // if (column.loadInLocalTimezone) {
-                    //     entityValue = DataTransformationUtils.mixedDateToDatetimeString(entityValue);
-                    //     databaseValue = DataTransformationUtils.mixedDateToDatetimeString(databaseValue);
-                    // } else {
-                        entityValue = DataTransformationUtils.mixedDateToUtcDatetimeString(entityValue);
-                        databaseValue = DataTransformationUtils.mixedDateToUtcDatetimeString(databaseValue);
-                    // }
+                } else if (column.type === "datetime" || column.type === Date) {
+                    entityValue = DataUtils.mixedDateToUtcDatetimeString(entityValue);
+                    databaseValue = DataUtils.mixedDateToUtcDatetimeString(databaseValue);
 
-                } else if (column.type === ColumnTypes.JSON) {
+                } else if (column.type === "json" || column.type === "jsonb" || column.type === Object) {
                     entityValue = JSON.stringify(entityValue);
                     if (databaseValue !== null && databaseValue !== undefined)
                         databaseValue = JSON.stringify(databaseValue);
 
-                } else if (column.type === ColumnTypes.SIMPLE_ARRAY) {
-                    entityValue = DataTransformationUtils.simpleArrayToString(entityValue);
-                    databaseValue = DataTransformationUtils.simpleArrayToString(databaseValue);
+                } else if (column.type === "sample-array") {
+                    entityValue = DataUtils.simpleArrayToString(entityValue);
+                    databaseValue = DataUtils.simpleArrayToString(databaseValue);
                 }
             }
             // todo: this mechanism does not get in count embeddeds in embeddeds

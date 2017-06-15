@@ -1,7 +1,5 @@
 import {Connection} from "../connection/Connection";
-import {QueryRunnerProvider} from "../query-runner/QueryRunnerProvider";
 import {EntityManager} from "./EntityManager";
-import {QueryBuilder} from "../query-builder/QueryBuilder";
 import {ObjectType} from "../common/ObjectType";
 import {
     AggregationCursor,
@@ -56,8 +54,8 @@ export class MongoEntityManager extends EntityManager {
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(connection: Connection, queryRunnerProvider?: QueryRunnerProvider) {
-        super(connection, queryRunnerProvider);
+    constructor(connection: Connection) {
+        super(connection);
     }
 
     // -------------------------------------------------------------------------
@@ -498,7 +496,7 @@ export class MongoEntityManager extends EntityManager {
     // -------------------------------------------------------------------------
 
     protected get queryRunner(): MongoQueryRunner {
-        return (this.connection.driver as MongoDriver).queryRunner;
+        return (this.connection.driver as MongoDriver).queryRunner!;
     }
 
     protected convertFindManyOptionsOrConditionsToMongodbQuery<Entity>(optionsOrConditions: FindOneOptions<Entity>|Partial<Entity>|undefined): ObjectLiteral|undefined {

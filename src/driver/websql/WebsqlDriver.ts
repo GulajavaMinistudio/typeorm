@@ -3,7 +3,7 @@ import {DriverUtils} from "../DriverUtils";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {DriverOptionNotSetError} from "../error/DriverOptionNotSetError";
-import {DataUtils} from "../../util/DataUtils";
+import {DateUtils} from "../../util/DateUtils";
 import {WebsqlQueryRunner} from "./WebsqlQueryRunner";
 import {Connection} from "../../connection/Connection";
 import {RdbmsSchemaBuilder} from "../../schema-builder/RdbmsSchemaBuilder";
@@ -78,13 +78,13 @@ export class WebsqlDriver implements Driver {
      */
     mappedDataTypes: MappedColumnTypes = {
         createDate: "datetime",
-        createDateDefault: "DATETIME()",
+        createDateDefault: "datetime('now')",
         updateDate: "datetime",
-        updateDateDefault: "DATETIME()",
-        version: "number",
-        treeLevel: "number",
+        updateDateDefault: "datetime('now')",
+        version: "int",
+        treeLevel: "int",
         migrationName: "varchar",
-        migrationTimestamp: "timestamp",
+        migrationTimestamp: "bigint",
     };
 
     // -------------------------------------------------------------------------
@@ -196,19 +196,19 @@ export class WebsqlDriver implements Driver {
             return value === true ? 1 : 0;
 
         } else if (columnMetadata.type === "date") {
-            return DataUtils.mixedDateToDateString(value);
+            return DateUtils.mixedDateToDateString(value);
 
         } else if (columnMetadata.type === "time") {
-            return DataUtils.mixedDateToTimeString(value);
+            return DateUtils.mixedDateToTimeString(value);
 
         } else if (columnMetadata.type === "datetime") {
-            return DataUtils.mixedDateToUtcDatetimeString(value);
+            return DateUtils.mixedDateToUtcDatetimeString(value);
 
         } else if (columnMetadata.type === "json") {
             return JSON.stringify(value);
 
         } else if (columnMetadata.type === "simple-array") {
-            return DataUtils.simpleArrayToString(value);
+            return DateUtils.simpleArrayToString(value);
         }
 
         return value;
@@ -222,19 +222,19 @@ export class WebsqlDriver implements Driver {
             return value ? true : false;
 
         } else if (columnMetadata.type === "datetime") {
-            return DataUtils.normalizeHydratedDate(value);
+            return DateUtils.normalizeHydratedDate(value);
 
         } else if (columnMetadata.type === "date") {
-            return DataUtils.mixedDateToDateString(value);
+            return DateUtils.mixedDateToDateString(value);
 
         } else if (columnMetadata.type === "time") {
-            return DataUtils.mixedTimeToString(value);
+            return DateUtils.mixedTimeToString(value);
 
         } else if (columnMetadata.type === "json") {
             return JSON.parse(value);
 
         } else if (columnMetadata.type === "simple-array") {
-            return DataUtils.stringToSimpleArray(value);
+            return DateUtils.stringToSimpleArray(value);
         }
 
         return value;
@@ -243,7 +243,7 @@ export class WebsqlDriver implements Driver {
     /**
      * Creates a database type from a given column metadata.
      */
-    normalizeType(column: ColumnMetadata): string {
+    normalizeType(column: { type?: ColumnType, length?: string|number, precision?: number, scale?: number, array?: string|boolean }): string {
         let type = "";
         if (column.type === Number) {
             type += "integer";

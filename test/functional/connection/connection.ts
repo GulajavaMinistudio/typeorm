@@ -9,20 +9,13 @@ import {View} from "./entity/View";
 import {Category} from "./entity/Category";
 import {closeTestingConnections, createTestingConnections, setupSingleTestingConnection} from "../../utils/test-utils";
 import {Connection} from "../../../src/connection/Connection";
-import {PostgresDriver} from "../../../src/driver/postgres/PostgresDriver";
 import {Repository} from "../../../src/repository/Repository";
 import {TreeRepository} from "../../../src/repository/TreeRepository";
 import {getConnectionManager} from "../../../src/index";
 import {NoConnectionForRepositoryError} from "../../../src/connection/error/NoConnectionForRepositoryError";
-import {FirstCustomNamingStrategy} from "./naming-strategy/FirstCustomNamingStrategy";
-import {SecondCustomNamingStrategy} from "./naming-strategy/SecondCustomNamingStrategy";
 import {EntityManager} from "../../../src/entity-manager/EntityManager";
 import {CannotGetEntityManagerNotConnectedError} from "../../../src/connection/error/CannotGetEntityManagerNotConnectedError";
-import {Blog} from "./modules/blog/entity/Blog";
-import {Question} from "./modules/question/entity/Question";
-import {Video} from "./modules/video/entity/Video";
 import {ConnectionOptions} from "../../../src/connection/ConnectionOptions";
-import {DefaultNamingStrategy} from "../../../src/naming-strategy/DefaultNamingStrategy";
 import {PostgresConnectionOptions} from "../../../src/driver/postgres/PostgresConnectionOptions";
 
 describe("Connection", () => {
@@ -194,6 +187,21 @@ describe("Connection", () => {
 
     });
 
+    describe("log a schema when connection.logSyncSchema is called", function() {
+
+        let connections: Connection[];
+        before(async () => connections = await createTestingConnections({
+            entities: [Post]
+        }));
+        after(() => closeTestingConnections(connections));
+
+        it("should return sql log properly", () => Promise.all(connections.map(async connection => {
+            const sql = await connection.logSyncSchema();
+            // console.log(sql);
+        })));
+
+    });
+
     describe("after connection is closed successfully", function() {
 
         // open a close connections
@@ -220,7 +228,7 @@ describe("Connection", () => {
         afterEach(() => closeTestingConnections(connections));
         it("database should be empty after schema sync", () => Promise.all(connections.map(async connection => {
             await connection.syncSchema(true);
-            const queryRunner = connection.driver.createQueryRunner();
+            const queryRunner = connection.createQueryRunner();
             let schema = await queryRunner.loadTableSchemas(["view"]);
             await queryRunner.release();
             expect(schema.some(table => table.name === "view")).to.be.false;
@@ -304,7 +312,7 @@ describe("Connection", () => {
                 const commentRepo = connection.getRepository(CommentV1);
                 await commentRepo.save(comment);
 
-                const queryRunner = connection.driver.createQueryRunner();
+                const queryRunner = connection.createQueryRunner();
                 const rows = await queryRunner.query(`select * from "${schemaName}"."comment" where id = $1`, [comment.id]);
                 await queryRunner.release();
                 expect(rows[0]["context"]).to.be.eq(comment.context);

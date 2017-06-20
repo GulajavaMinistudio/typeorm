@@ -49,7 +49,9 @@ export class MigrationCreateCommand {
             } catch (err) { }
         }
 
-        await CommandUtils.createFile(process.cwd() + "/" + (directory ? (directory + "/") : "") + filename, fileContent);
+        const path = process.cwd() + "/" + (directory ? (directory + "/") : "") + filename;
+        await CommandUtils.createFile(path, fileContent);
+        console.log(`Migration "${path}" has been generated successfully.`);
     }
 
     // -------------------------------------------------------------------------
@@ -64,10 +66,10 @@ export class MigrationCreateCommand {
 
 export class ${name}${timestamp} implements MigrationInterface {
 
-    public async up(queryRunner: QueryRunner, connection: Connection, entityManager?: EntityManager): Promise<any> {
+    public async up(queryRunner: QueryRunner): Promise<any> {
     }
 
-    public async down(queryRunner: QueryRunner, connection: Connection, entityManager?: EntityManager): Promise<any> {
+    public async down(queryRunner: QueryRunner): Promise<any> {
     }
 
 }

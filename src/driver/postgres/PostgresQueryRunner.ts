@@ -10,6 +10,8 @@ import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {PostgresDriver} from "./PostgresDriver";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {Connection} from "../../connection/Connection";
 
 /**
  * Runs queries on a single postgres database connection.
@@ -19,6 +21,16 @@ export class PostgresQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
     // Public Implemented Properties
     // -------------------------------------------------------------------------
+
+    /**
+     * Connection used by this query runner.
+     */
+    connection: Connection;
+
+    /**
+     * Entity manager isolated for this query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -65,6 +77,8 @@ export class PostgresQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     constructor(protected driver: PostgresDriver) {
+        this.connection = driver.connection;
+        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -92,8 +106,8 @@ export class PostgresQueryRunner implements QueryRunner {
 
                 connection.query(`SET search_path TO '${this.schemaName}', 'public';`, (err: any) => {
                     if (err) {
-                        this.driver.connection.logger.logFailedQuery(`SET search_path TO '${this.schemaName}', 'public';`);
-                        this.driver.connection.logger.logQueryError(err);
+                        this.driver.connection.logger.logFailedQuery(`SET search_path TO '${this.schemaName}', 'public';`, [], this);
+                        this.driver.connection.logger.logQueryError(err, this);
                         fail(err);
                     } else {
                         ok(connection);
@@ -166,12 +180,12 @@ export class PostgresQueryRunner implements QueryRunner {
         // console.log("query: ", query);
         // console.log("parameters: ", parameters);
         return new Promise<any[]>(async (ok, fail) => {
-            this.driver.connection.logger.logQuery(query, parameters);
+            this.driver.connection.logger.logQuery(query, parameters, this);
             const databaseConnection = await this.connect();
             databaseConnection.query(query, parameters, (err: any, result: any) => {
                 if (err) {
-                    this.driver.connection.logger.logFailedQuery(query, parameters);
-                    this.driver.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters, this);
+                    this.driver.connection.logger.logQueryError(err, this);
                     fail(err);
                 } else {
                     ok(result.rows);
@@ -674,7 +688,7 @@ where constraint_type = 'PRIMARY KEY' AND c.table_schema = '${this.schemaName}' 
     /**
      * Gets sql stored in the memory. Parameters in the sql are already replaced.
      */
-    getMemorySql(): string[] {
+    getMemorySql(): (string|{ up: string, down: string })[] {
         return this.sqlsInMemory;
     }
 

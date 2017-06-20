@@ -23,6 +23,7 @@ import {getMetadataArgsStorage} from "../index";
 import {AbstractRepository} from "../repository/AbstractRepository";
 import {CustomRepositoryCannotInheritRepositoryError} from "../repository/error/CustomRepositoryCannotInheritRepositoryError";
 import {QueryRunner} from "../query-runner/QueryRunner";
+import {SelectQueryBuilder} from "../query-builder/SelectQueryBuilder";
 
 /**
  * Entity manager supposed to work with any entity, automatically find its repository and call its methods,
@@ -86,17 +87,17 @@ export class EntityManager {
     /**
      * Creates a new query builder that can be used to build a sql query.
      */
-    createQueryBuilder<Entity>(entityClass: ObjectType<Entity>|Function|string, alias: string, queryRunner?: QueryRunner): QueryBuilder<Entity>;
+    createQueryBuilder<Entity>(entityClass: ObjectType<Entity>|Function|string, alias: string, queryRunner?: QueryRunner): SelectQueryBuilder<Entity>;
 
     /**
      * Creates a new query builder that can be used to build a sql query.
      */
-    createQueryBuilder(queryRunner?: QueryRunner): QueryBuilder<any>;
+    createQueryBuilder(queryRunner?: QueryRunner): SelectQueryBuilder<any>;
 
     /**
      * Creates a new query builder that can be used to build a sql query.
      */
-    createQueryBuilder<Entity>(entityClass?: ObjectType<Entity>|Function|string|QueryRunner, alias?: string, queryRunner?: QueryRunner): QueryBuilder<Entity> {
+    createQueryBuilder<Entity>(entityClass?: ObjectType<Entity>|Function|string|QueryRunner, alias?: string, queryRunner?: QueryRunner): SelectQueryBuilder<Entity> {
         if (alias) {
             return this.connection.createQueryBuilder(entityClass as Function|string, alias, queryRunner || this.queryRunner);
 
@@ -738,7 +739,8 @@ export class EntityManager {
         const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
             const transactionEntityManager = this.connection.createIsolatedManager(queryRunner);
-            // transactionEntityManager.data =
+            if (options && options.data)
+                transactionEntityManager.data = options.data;
 
             const databaseEntityLoader = new SubjectBuilder(this.connection, queryRunner);
             await databaseEntityLoader.persist(entity, metadata);
@@ -760,6 +762,8 @@ export class EntityManager {
         const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
             const transactionEntityManager = this.connection.createIsolatedManager(queryRunner);
+            if (options && options.data)
+                transactionEntityManager.data = options.data;
 
             const databaseEntityLoader = new SubjectBuilder(this.connection, queryRunner);
             await databaseEntityLoader.remove(entity, metadata);

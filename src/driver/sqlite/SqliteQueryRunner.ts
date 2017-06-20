@@ -11,6 +11,8 @@ import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {RandomGenerator} from "../../util/RandomGenerator";
 import {SqliteDriver} from "./SqliteDriver";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {Connection} from "../../connection/Connection";
 
 /**
  * Runs queries on a single sqlite database connection.
@@ -23,6 +25,16 @@ export class SqliteQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
     // Public Implemented Properties
     // -------------------------------------------------------------------------
+
+    /**
+     * Connection used by this query runner.
+     */
+    connection: Connection;
+
+    /**
+     * Entity manager isolated for this query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -54,6 +66,8 @@ export class SqliteQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     constructor(protected driver: SqliteDriver) {
+        this.connection = driver.connection;
+        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -119,12 +133,12 @@ export class SqliteQueryRunner implements QueryRunner {
             throw new QueryRunnerAlreadyReleasedError();
 
         return new Promise<any[]>(async (ok, fail) => {
-            this.driver.connection.logger.logQuery(query, parameters);
+            this.driver.connection.logger.logQuery(query, parameters, this);
             const databaseConnection = await this.connect();
             databaseConnection.all(query, parameters, (err: any, result: any) => {
                 if (err) {
-                    this.driver.connection.logger.logFailedQuery(query, parameters);
-                    this.driver.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters, this);
+                    this.driver.connection.logger.logQueryError(err, this);
                     fail(err);
                 } else {
                     ok(result);
@@ -145,13 +159,13 @@ export class SqliteQueryRunner implements QueryRunner {
         const parameters = keys.map(key => keyValues[key]);
 
         return new Promise<any[]>(async (ok, fail) => {
-            this.driver.connection.logger.logQuery(sql, parameters);
+            this.driver.connection.logger.logQuery(sql, parameters, this);
             const __this = this;
             const databaseConnection = await this.connect();
             databaseConnection.run(sql, parameters, function (err: any): void {
                 if (err) {
-                    __this.driver.connection.logger.logFailedQuery(sql, parameters);
-                    __this.driver.connection.logger.logQueryError(err);
+                    __this.driver.connection.logger.logFailedQuery(sql, parameters, this);
+                    __this.driver.connection.logger.logQueryError(err, this);
                     fail(err);
                 } else {
                     if (generatedColumn)
@@ -594,7 +608,7 @@ export class SqliteQueryRunner implements QueryRunner {
     /**
      * Gets sql stored in the memory. Parameters in the sql are already replaced.
      */
-    getMemorySql(): string[] {
+    getMemorySql(): (string|{ up: string, down: string })[] {
         return this.sqlsInMemory;
     }
 

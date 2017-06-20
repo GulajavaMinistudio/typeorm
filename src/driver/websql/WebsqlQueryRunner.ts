@@ -9,6 +9,8 @@ import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {WebsqlDriver} from "./WebsqlDriver";
+import {Connection} from "../../connection/Connection";
+import {EntityManager} from "../../entity-manager/EntityManager";
 
 /**
  * Declare a global function that is only available in browsers that support WebSQL.
@@ -23,6 +25,16 @@ export class WebsqlQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
     // Public Implemented Properties
     // -------------------------------------------------------------------------
+
+    /**
+     * Connection used by this query runner.
+     */
+    connection: Connection;
+
+    /**
+     * Entity manager isolated for this query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -64,6 +76,8 @@ export class WebsqlQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     constructor(protected driver: WebsqlDriver) {
+        this.connection = driver.connection;
+        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -161,7 +175,7 @@ export class WebsqlQueryRunner implements QueryRunner {
 
         return new Promise(async (ok, fail) => {
 
-            this.driver.connection.logger.logQuery(query, parameters);
+            this.driver.connection.logger.logQuery(query, parameters, this);
             const db = await this.connect();
             // todo(dima): check if transaction is not active
             db.transaction((tx: any) => {
@@ -173,8 +187,8 @@ export class WebsqlQueryRunner implements QueryRunner {
                     ok(rows);
 
                 }, (tx: any, err: any) => {
-                    this.driver.connection.logger.logFailedQuery(query, parameters);
-                    this.driver.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters, this);
+                    this.driver.connection.logger.logQueryError(err, this);
                     return fail(err);
                 });
             });
@@ -193,7 +207,7 @@ export class WebsqlQueryRunner implements QueryRunner {
         const parameters = keys.map(key => keyValues[key]);
 
         return new Promise<any[]>(async (ok, fail) => {
-            this.driver.connection.logger.logQuery(sql, parameters);
+            this.driver.connection.logger.logQuery(sql, parameters, this);
 
             const db = await this.connect();
             // todo: check if transaction is not active
@@ -204,8 +218,8 @@ export class WebsqlQueryRunner implements QueryRunner {
                     ok();
 
                 }, (tx: any, err: any) => {
-                    this.driver.connection.logger.logFailedQuery(sql, parameters);
-                    this.driver.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(sql, parameters, this);
+                    this.driver.connection.logger.logQueryError(err, this);
                     return fail(err);
                 });
             });
@@ -641,7 +655,7 @@ export class WebsqlQueryRunner implements QueryRunner {
     /**
      * Gets sql stored in the memory. Parameters in the sql are already replaced.
      */
-    getMemorySql(): string[] {
+    getMemorySql(): (string|{ up: string, down: string })[] {
         return this.sqlsInMemory;
     }
 

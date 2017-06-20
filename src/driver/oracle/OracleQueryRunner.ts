@@ -10,6 +10,8 @@ import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {OracleDriver} from "./OracleDriver";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {Connection} from "../../connection/Connection";
 
 /**
  * Runs queries on a single oracle database connection.
@@ -21,6 +23,16 @@ export class OracleQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
     // Public Implemented Properties
     // -------------------------------------------------------------------------
+
+    /**
+     * Connection used by this query runner.
+     */
+    connection: Connection;
+
+    /**
+     * Entity manager isolated for this query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -62,6 +74,8 @@ export class OracleQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     constructor(protected driver: OracleDriver) {
+        this.connection = driver.connection;
+        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -154,11 +168,11 @@ export class OracleQueryRunner implements QueryRunner {
             throw new QueryRunnerAlreadyReleasedError();
 
         return new Promise(async (ok, fail) => {
-            this.driver.connection.logger.logQuery(query, parameters);
+            this.driver.connection.logger.logQuery(query, parameters, this);
             const handler = (err: any, result: any) => {
                 if (err) {
-                    this.driver.connection.logger.logFailedQuery(query, parameters);
-                    this.driver.connection.logger.logQueryError(err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters, this);
+                    this.driver.connection.logger.logQueryError(err, this);
                     return fail(err);
                 }
 
@@ -648,7 +662,7 @@ AND cons.constraint_name = cols.constraint_name AND cons.owner = cols.owner ORDE
     /**
      * Gets sql stored in the memory. Parameters in the sql are already replaced.
      */
-    getMemorySql(): string[] {
+    getMemorySql(): (string|{ up: string, down: string })[] {
         return this.sqlsInMemory;
     }
 

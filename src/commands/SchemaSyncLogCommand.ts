@@ -35,12 +35,17 @@ export class SchemaSyncLogCommand {
             const connectionOptions = await connectionOptionsReader.get(argv.connection);
             connection = await createConnection(connectionOptions);
             const sqls = await connection.logSyncSchema();
-            sqls.forEach(sql => console.log(sql));
+            sqls.forEach(sql => {
+                if (typeof sql === "string") {
+                    console.log(sql);
+                } else {
+                    console.log(sql.up);
+                }
+            });
 
         } catch (err) {
-            if (connection)
-                (connection as Connection).logger.log("error", err);
-            throw err;
+            console.error(err);
+            // throw err;
 
         } finally {
             if (connection)

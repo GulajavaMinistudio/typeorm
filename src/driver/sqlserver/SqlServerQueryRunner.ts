@@ -10,6 +10,8 @@ import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {QueryRunnerAlreadyReleasedError} from "../../query-runner/error/QueryRunnerAlreadyReleasedError";
 import {SqlServerDriver} from "./SqlServerDriver";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {Connection} from "../../connection/Connection";
 
 /**
  * Runs queries on a single mysql database connection.
@@ -19,6 +21,16 @@ export class SqlServerQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
     // Public Implemented Properties
     // -------------------------------------------------------------------------
+
+    /**
+     * Connection used by this query runner.
+     */
+    connection: Connection;
+
+    /**
+     * Entity manager isolated for this query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -64,6 +76,8 @@ export class SqlServerQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     constructor(protected driver: SqlServerDriver) {
+        this.connection = driver.connection;
+        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -169,7 +183,7 @@ export class SqlServerQueryRunner implements QueryRunner {
 
         const promise = new Promise(async (ok, fail) => {
 
-            this.driver.connection.logger.logQuery(query, parameters);
+            this.driver.connection.logger.logQuery(query, parameters, this);
             const request = new this.driver.mssql.Request(this.isTransactionActive ? this.databaseConnection : this.driver.connectionPool);
             if (parameters && parameters.length) {
                 parameters.forEach((parameter, index) => {
@@ -189,8 +203,8 @@ export class SqlServerQueryRunner implements QueryRunner {
                 let promiseIndex = this.queryResponsibilityChain.indexOf(promise);
                 let waitingPromiseIndex = this.queryResponsibilityChain.indexOf(waitingPromise);
                 if (err) {
-                    this.driver.connection.logger.logFailedQuery(query, parameters);
-                    this.driver.connection.logger.logQueryError((err.originalError && err.originalError.info) ? err.originalError.info.message : err);
+                    this.driver.connection.logger.logFailedQuery(query, parameters, this);
+                    this.driver.connection.logger.logQueryError((err.originalError && err.originalError.info) ? err.originalError.info.message : err, this);
                     resolveChain();
                     return fail(err);
                 }
@@ -699,7 +713,7 @@ WHERE columnUsages.TABLE_CATALOG = '${this.dbName}' AND tableConstraints.TABLE_C
     /**
      * Gets sql stored in the memory. Parameters in the sql are already replaced.
      */
-    getMemorySql(): string[] {
+    getMemorySql(): (string|{ up: string, down: string })[] {
         return this.sqlsInMemory;
     }
 

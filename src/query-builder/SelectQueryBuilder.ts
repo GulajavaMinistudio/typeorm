@@ -1,35 +1,23 @@
 import {RawSqlResultsToEntityTransformer} from "./transformer/RawSqlResultsToEntityTransformer";
-import {EntityMetadata} from "../metadata/EntityMetadata";
 import {ObjectLiteral} from "../common/ObjectLiteral";
-import {QueryRunner} from "../query-runner/QueryRunner";
 import {SqlServerDriver} from "../driver/sqlserver/SqlServerDriver";
-import {Connection} from "../connection/Connection";
 import {JoinOptions} from "./JoinOptions";
 import {PessimisticLockTransactionRequiredError} from "./error/PessimisticLockTransactionRequiredError";
 import {NoVersionOrUpdateDateColumnError} from "./error/NoVersionOrUpdateDateColumnError";
 import {OptimisticLockVersionMismatchError} from "./error/OptimisticLockVersionMismatchError";
 import {OptimisticLockCanNotBeUsedError} from "./error/OptimisticLockCanNotBeUsedError";
-import {PostgresDriver} from "../driver/postgres/PostgresDriver";
-import {MysqlDriver} from "../driver/mysql/MysqlDriver";
-import {LockNotSupportedOnGivenDriverError} from "./error/LockNotSupportedOnGivenDriverError";
-import {ColumnMetadata} from "../metadata/ColumnMetadata";
 import {JoinAttribute} from "./JoinAttribute";
 import {RelationIdAttribute} from "./relation-id/RelationIdAttribute";
 import {RelationCountAttribute} from "./relation-count/RelationCountAttribute";
-import {QueryExpressionMap} from "./QueryExpressionMap";
-import {SelectQuery} from "./SelectQuery";
 import {RelationIdLoader} from "./relation-id/RelationIdLoader";
 import {RelationIdLoadResult} from "./relation-id/RelationIdLoadResult";
 import {RelationIdMetadataToAttributeTransformer} from "./relation-id/RelationIdMetadataToAttributeTransformer";
 import {RelationCountLoadResult} from "./relation-count/RelationCountLoadResult";
 import {RelationCountLoader} from "./relation-count/RelationCountLoader";
 import {RelationCountMetadataToAttributeTransformer} from "./relation-count/RelationCountMetadataToAttributeTransformer";
-import {OracleDriver} from "../driver/oracle/OracleDriver";
 import {Broadcaster} from "../subscriber/Broadcaster";
-import {UpdateQueryBuilder} from "./UpdateQueryBuilder";
-import {DeleteQueryBuilder} from "./DeleteQueryBuilder";
-import {InsertQueryBuilder} from "./InsertQueryBuilder";
 import {QueryBuilder} from "./QueryBuilder";
+import {ReadStream} from "fs";
 
 /**
  * Allows to build complex sql queries in a fashion way and execute those queries.
@@ -39,6 +27,29 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
     // -------------------------------------------------------------------------
     // Public Methods
     // -------------------------------------------------------------------------
+
+    /**
+     * Adds new selection to the SELECT query.
+     */
+    addSelect(selection: string, selectionAliasName?: string): this;
+
+    /**
+     * Adds new selection to the SELECT query.
+     */
+    addSelect(selection: string[]): this;
+
+    /**
+     * Adds new selection to the SELECT query.
+     */
+    addSelect(selection: string|string[], selectionAliasName?: string): this {
+        if (selection instanceof Array) {
+            this.expressionMap.selects = this.expressionMap.selects.concat(selection.map(selection => ({ selection: selection })));
+        } else {
+            this.expressionMap.selects.push({ selection: selection, aliasName: selectionAliasName });
+        }
+
+        return this;
+    }
 
     /**
      * Specifies FROM which entity's table select/update/delete will be executed.
@@ -711,15 +722,23 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
     }
 
     /**
-     * Clones query builder as it is.
-     * Note: it uses new query runner, if you want query builder that uses exactly same query runner,
-     * you can create query builder this way: new SelectQueryBuilder(queryBuilder) where queryBuilder
-     * is cloned QueryBuilder.
+     * Returns raw data stream.
      */
-    clone(): SelectQueryBuilder<Entity> {
-        const qb = new SelectQueryBuilder<Entity>(this.connection);
-        qb.expressionMap = this.expressionMap.clone();
-        return qb;
+    async stream(): Promise<ReadStream> {
+        const [sql, parameters] = this.getSqlAndParameters();
+        try {
+            const stream = await this.queryRunner.stream(sql, parameters);
+            stream.on("end", () => {
+                if (this.ownQueryRunner) // means we created our own query runner
+                    return this.queryRunner.release();
+                return;
+            });
+            return stream;
+
+        } finally {
+            if (this.ownQueryRunner) // means we created our own query runner
+                await this.queryRunner.release();
+        }
     }
 
     /**
@@ -816,7 +835,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
             .select(countSql);
         countQueryBuilder.expressionMap.ignoreParentTablesJoins = true;
 
-        const [countQuerySql, countQueryParameters] = countQueryBuilder.getSqlWithParameters();
+        const [countQuerySql, countQueryParameters] = countQueryBuilder.getSqlAndParameters();
 
         try {
             const results = await this.queryRunner.query(countQuerySql, countQueryParameters);
@@ -861,7 +880,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
             if (this.expressionMap.skip || this.expressionMap.take) {
                 // we are skipping order by here because its not working in subqueries anyway
                 // to make order by working we need to apply it on a distinct query
-                const [sql, parameters] = this.getSqlWithParameters({ skipOrderBy: true });
+                const [sql, parameters] = this.getSqlAndParameters({ skipOrderBy: true });
                 const [selects, orderBys] = this.createOrderByCombinedWithSelectExpression("distinctAlias");
 
                 const distinctAlias = this.escapeTable("distinctAlias");
@@ -928,7 +947,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
                     clonnedQb.expressionMap.extraAppendedAndWhereCondition = condition;
                     const [queryWithIdsSql, queryWithIdsParameters] = clonnedQb
                         .setParameters(parameters)
-                        .getSqlWithParameters();
+                        .getSqlAndParameters();
                     rawResults = await this.queryRunner.query(queryWithIdsSql, queryWithIdsParameters);
                     const rawRelationIdResults = await relationIdLoader.load(rawResults);
                     const rawRelationCountResults = await relationCountLoader.load(rawResults);
@@ -945,7 +964,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
 
             } else {
 
-                const [sql, parameters] = this.getSqlWithParameters();
+                const [sql, parameters] = this.getSqlAndParameters();
 
                 const rawResults = await this.queryRunner.query(sql, parameters);
 

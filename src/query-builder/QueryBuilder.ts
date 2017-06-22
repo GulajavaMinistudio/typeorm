@@ -1,54 +1,41 @@
-import {RawSqlResultsToEntityTransformer} from "./transformer/RawSqlResultsToEntityTransformer";
 import {EntityMetadata} from "../metadata/EntityMetadata";
 import {ObjectLiteral} from "../common/ObjectLiteral";
 import {QueryRunner} from "../query-runner/QueryRunner";
 import {SqlServerDriver} from "../driver/sqlserver/SqlServerDriver";
 import {Connection} from "../connection/Connection";
-import {JoinOptions} from "./JoinOptions";
-import {PessimisticLockTransactionRequiredError} from "./error/PessimisticLockTransactionRequiredError";
-import {NoVersionOrUpdateDateColumnError} from "./error/NoVersionOrUpdateDateColumnError";
-import {OptimisticLockVersionMismatchError} from "./error/OptimisticLockVersionMismatchError";
-import {OptimisticLockCanNotBeUsedError} from "./error/OptimisticLockCanNotBeUsedError";
 import {PostgresDriver} from "../driver/postgres/PostgresDriver";
 import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {LockNotSupportedOnGivenDriverError} from "./error/LockNotSupportedOnGivenDriverError";
 import {ColumnMetadata} from "../metadata/ColumnMetadata";
-import {JoinAttribute} from "./JoinAttribute";
-import {RelationIdAttribute} from "./relation-id/RelationIdAttribute";
-import {RelationCountAttribute} from "./relation-count/RelationCountAttribute";
 import {QueryExpressionMap} from "./QueryExpressionMap";
 import {SelectQuery} from "./SelectQuery";
-import {RelationIdLoader} from "./relation-id/RelationIdLoader";
-import {RelationIdLoadResult} from "./relation-id/RelationIdLoadResult";
-import {RelationIdMetadataToAttributeTransformer} from "./relation-id/RelationIdMetadataToAttributeTransformer";
-import {RelationCountLoadResult} from "./relation-count/RelationCountLoadResult";
-import {RelationCountLoader} from "./relation-count/RelationCountLoader";
-import {RelationCountMetadataToAttributeTransformer} from "./relation-count/RelationCountMetadataToAttributeTransformer";
 import {OracleDriver} from "../driver/oracle/OracleDriver";
-import {Broadcaster} from "../subscriber/Broadcaster";
 import {SelectQueryBuilder} from "./SelectQueryBuilder";
 import {UpdateQueryBuilder} from "./UpdateQueryBuilder";
 import {DeleteQueryBuilder} from "./DeleteQueryBuilder";
 import {InsertQueryBuilder} from "./InsertQueryBuilder";
+import {RelationQueryBuilder} from "./RelationQueryBuilder";
 
+// todo: completely cover query builder with tests
+// todo: entityOrProperty can be target name. implement proper behaviour if it is.
+// todo: check in persistment if id exist on object and throw exception (can be in partial selection?)
 // todo: fix problem with long aliases eg getMaxIdentifierLength
 // todo: fix replacing in .select("COUNT(post.id) AS cnt") statement
 // todo: implement joinAlways in relations and relationId
+// todo: finish partial selection
+// todo: sugar methods like: .addCount and .selectCount, selectCountAndMap, selectSum, selectSumAndMap, ...
 // todo: implement @Select decorator
-// todo: add quoting functions
-// todo: .addCount and .addCountSelect()
-// todo: add selectAndMap
 
-// todo: tests for:
-// todo: entityOrProperty can be target name. implement proper behaviour if it is.
-// todo: think about subselect in joins syntax
-// todo: COMPLETELY COVER QUERY BUILDER WITH TESTS
+// todo: implement subselects for WHERE, FROM, SELECT
+// .fromSubSelect()
+// .whereSubSelect()
+// .addSubSelect()
+// .addSubSelectAndMap()
+// use qb => qb.select().from().where() syntax where needed
 
-// todo: SUBSELECT IMPLEMENTATION
-// .whereSubselect(qb => qb.select().from().where())
-// todo: also create qb.createSubQueryBuilder()
-// todo: check in persistment if id exist on object and throw exception (can be in partial selection?)
-// todo: STREAMING
+// todo: implement relation/entity loading and setting them into properties within a separate query
+// .loadAndMap("post.categories", "post.categories", qb => ...)
+// .loadAndMap("post.categories", Category, qb => ...)
 
 /**
  * Allows to build complex sql queries in a fashion way and execute those queries.
@@ -170,34 +157,6 @@ export abstract class QueryBuilder<Entity> {
     }
 
     /**
-     * Adds new selection to the SELECT query.
-     */
-    addSelect(selection: string, selectionAliasName?: string): SelectQueryBuilder<Entity>;
-
-    /**
-     * Adds new selection to the SELECT query.
-     */
-    addSelect(selection: string[]): SelectQueryBuilder<Entity>;
-
-    /**
-     * Adds new selection to the SELECT query.
-     */
-    addSelect(selection: string|string[], selectionAliasName?: string): SelectQueryBuilder<Entity> {
-        if (selection instanceof Array) {
-            this.expressionMap.selects = this.expressionMap.selects.concat(selection.map(selection => ({ selection: selection })));
-        } else {
-            this.expressionMap.selects.push({ selection: selection, aliasName: selectionAliasName });
-        }
-
-        // loading it dynamically because of circular issue
-        const SelectQueryBuilderCls = require("./SelectQueryBuilder").SelectQueryBuilder;
-        if (this instanceof SelectQueryBuilderCls)
-            return this as any;
-
-        return new SelectQueryBuilderCls(this);
-    }
-
-    /**
      * Creates INSERT query.
      */
     insert(): InsertQueryBuilder<Entity> {
@@ -261,7 +220,23 @@ export abstract class QueryBuilder<Entity> {
     }
 
     /**
-     * Sets given parameter's value.
+     * Sets entity's relation with which this query builder gonna work.
+     */
+    relation(entityTarget: Function|string, propertyPath: string): RelationQueryBuilder<Entity> {
+        this.expressionMap.queryType = "relation";
+        // qb.expressionMap.propertyPath = propertyPath;
+        this.setMainAlias(entityTarget);
+
+        // loading it dynamically because of circular issue
+        const RelationQueryBuilderCls = require("./RelationQueryBuilder").RelationQueryBuilder;
+        if (this instanceof RelationQueryBuilderCls)
+            return this as any;
+
+        return new RelationQueryBuilderCls(this);
+    }
+
+    /**
+     * Sets parameter name and its value.
      */
     setParameter(key: string, value: any): this {
         this.expressionMap.parameters[key] = value;
@@ -300,10 +275,9 @@ export abstract class QueryBuilder<Entity> {
     }
 
     /**
-     * Gets generated sql that will be executed.
-     * Parameters in the query are escaped for the currently used driver.
+     * Gets generated sql query without parameters being replaced.
      */
-    getSql(): string {
+    getQuery(): string {
         let sql = this.createSelectExpression();
         sql += this.createJoinExpression();
         sql += this.createWhereExpression();
@@ -313,30 +287,29 @@ export abstract class QueryBuilder<Entity> {
         sql += this.createLimitOffsetExpression();
         sql += this.createLockExpression();
         sql = this.createLimitOffsetOracleSpecificExpression(sql);
-        [sql] = this.connection.driver.escapeQueryWithParameters(sql, this.expressionMap.parameters);
         return sql.trim();
     }
 
     /**
-     * Gets generated sql without parameters being replaced.
+     * Prints sql to stdout using console.log.
      */
-    getGeneratedQuery(): string {
-        let sql = this.createSelectExpression();
-        sql += this.createJoinExpression();
-        sql += this.createWhereExpression();
-        sql += this.createGroupByExpression();
-        sql += this.createHavingExpression();
-        sql += this.createOrderByExpression();
-        sql += this.createLimitOffsetExpression();
-        sql += this.createLockExpression();
-        sql = this.createLimitOffsetOracleSpecificExpression(sql);
-        return sql.trim();
+    printSql(): this {
+        console.log(this.getSql());
+        return this;
+    }
+
+    /**
+     * Gets generated sql that will be executed.
+     * Parameters in the query are escaped for the currently used driver.
+     */
+    getSql(): string {
+        return this.connection.driver.escapeQueryWithParameters(this.getQuery(), this.expressionMap.parameters)[0];
     }
 
     /**
      * Gets sql to be executed with all parameters used in it.
      */
-    getSqlWithParameters(options?: { skipOrderBy?: boolean }): [string, any[]] {
+    getSqlAndParameters(options?: { skipOrderBy?: boolean }): [string, any[]] {
         let sql = this.createSelectExpression();
         sql += this.createJoinExpression();
         sql += this.createWhereExpression();
@@ -354,7 +327,7 @@ export abstract class QueryBuilder<Entity> {
      * Executes sql generated by query builder and returns raw database results.
      */
     async execute(): Promise<any> {
-        const [sql, parameters] = this.getSqlWithParameters();
+        const [sql, parameters] = this.getSqlAndParameters();
         try {
             return await this.queryRunner.query(sql, parameters);  // await is needed here because we are using finally
 
@@ -362,6 +335,25 @@ export abstract class QueryBuilder<Entity> {
             if (this.ownQueryRunner) // means we created our own query runner
                 await this.queryRunner.release();
         }
+    }
+
+    /**
+     * Creates a completely new query builder.
+     */
+    createQueryBuilder(): this {
+        return new (this.constructor as any)(this.connection);
+    }
+
+    /**
+     * Clones query builder as it is.
+     * Note: it uses new query runner, if you want query builder that uses exactly same query runner,
+     * you can create query builder using its constructor, for example new SelectQueryBuilder(queryBuilder)
+     * where queryBuilder is cloned QueryBuilder.
+     */
+    clone(): this {
+        const qb = this.createQueryBuilder();
+        qb.expressionMap = this.expressionMap.clone();
+        return qb;
     }
 
     /**
@@ -564,21 +556,22 @@ export abstract class QueryBuilder<Entity> {
                 }
                 return "SELECT " + selection + " FROM " + this.escapeTable(tableName) + " " + ea(aliasName) + lock;
             case "delete":
-                return "DELETE FROM " + et(tableName);
-                // return "DELETE " + (alias ? ea(alias) : "") + " FROM " + this.escapeTable(tableName) + " " + (alias ? ea(alias) : ""); // TODO: only mysql supports aliasing, so what to do with aliases in DELETE queries? right now aliases are used however we are relaying that they will always match a table names
+                return "DELETE FROM " + et(tableName); // TODO: only mysql supports aliasing, so what to do with aliases in DELETE queries? right now aliases are used however we are relaying that they will always match a table names // todo: replace aliases in where to nothing?
             case "update":
                 let valuesSet = this.expressionMap.valuesSet as ObjectLiteral;
                 if (!valuesSet)
                     throw new Error(`Cannot perform update query because updation values are not defined.`);
 
-                const updateSet = Object.keys(valuesSet).map(key => ea(key) + "=:updateSet__" + key);
-                const params = Object.keys(valuesSet).reduce((object, key) => {
-                    // todo: map propertyNames to names ?
-                    object["updateSet__" + key] = valuesSet[key];
-                    return object;
-                }, {} as ObjectLiteral);
-                this.setParameters(params);
-                return "UPDATE " + this.escapeTable(tableName) + " " + (aliasName ? ea(aliasName) : "") + " SET " + updateSet;
+                const updateSet: string[] = [];
+                Object.keys(valuesSet).forEach(columnProperty => {
+                    const column = this.expressionMap.mainAlias!.metadata.findColumnWithPropertyName(columnProperty);
+                    if (column) {
+                        const paramName = "_updated_" + column.databaseName;
+                        this.setParameter(paramName, valuesSet[column.propertyName]);
+                        updateSet.push(ea(column.databaseName) + "=:" + paramName);
+                    }
+                });
+                return `UPDATE ${this.escapeTable(tableName)} ${aliasName ? ea(aliasName) : ""} SET ${updateSet.join(", ")}`; // todo: replace aliases in where to nothing?
             case "insert":
                 let valuesSets: ObjectLiteral[] = []; // todo: check if valuesSet is defined and has items if its an array
                 if (this.expressionMap.valuesSet instanceof Array && this.expressionMap.valuesSet.length > 0) {
@@ -589,18 +582,19 @@ export abstract class QueryBuilder<Entity> {
                     throw new Error(`Cannot perform insert query because values are not defined.`);
                 }
 
-                const parameters: ObjectLiteral = {};
-                const columns = Object.keys(valuesSets[0]).map(columnName => ea(columnName));
+                const columns: ColumnMetadata[] = [];
+                Object.keys(valuesSets[0]).forEach(columnProperty => {
+                    const column = this.expressionMap.mainAlias!.metadata.findColumnWithPropertyName(columnProperty);
+                    if (column) columns.push(column);
+                });
                 const values = valuesSets.map((valueSet, key) => {
-                    return "(" + Object.keys(valueSet).map(columnName => {
-                            const paramName = ":inserted_" + key + "_" + columnName;
-                            parameters[paramName] = valueSet[columnName];
-                            return paramName;
-                        }).join(",") + ")";
+                    return "(" + columns.map(column => {
+                        const paramName = ":_inserted_" + key + "_" + column.databaseName;
+                        this.setParameter(paramName, valueSet[column.propertyName]);
+                        return paramName;
+                    }).join(",") + ")";
                 }).join(", ");
-
-                this.setParameters(parameters);
-                return `INSERT INTO ${this.escapeTable(tableName)}(${columns}) VALUES ${values}`;
+                return `INSERT INTO ${this.escapeTable(tableName)}(${columns.map(column => column.databaseName)}) VALUES ${values}`;
         }
 
         throw new Error("No query builder type is specified.");

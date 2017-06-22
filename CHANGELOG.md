@@ -24,7 +24,7 @@ each for its own `findOne*` or `find*` methods
 * `SpecificRepository` is deprecated for now
 * `transaction` method has been removed from `Repository`. Use `EntityManager#transaction` method instead
 * custom repositories do not support container anymore
-* added ActiveRecord support (by extending EntityModel) class
+* added ActiveRecord support (by extending BaseEntity) class
 * controller / subscriber / migrations from options tsconfig now appended with a project root directory
 * removed naming strategy decorator, naming strategy by name functionality. 
 Now naming strategy should be registered by passing naming strategy instance directly
@@ -51,6 +51,9 @@ More env variable names you can find in `ConnectionOptionsEnvReader` class.
 * fixed how orm creates default values for SqlServer - now it creates constraints for it as well
 * migrations interface has changed - now `up` and `down` accept only `QueryRunner`. To use `Connection` and `EntityManager` use properties
 of `QueryRunner`, e.g. `queryRunner.connection` and `queryRunner.manager`
+* now `update` method in `QueryBuilder` accepts `Partial<Entity>` and property names used in update map are 
+column property names and they are automatically mapped to column names 
+* `SpecificRepository` has been removed. Instead new `RelationQueryBuilder` was introduced.
 
 ### DEPRECATIONS
 
@@ -67,6 +70,8 @@ of `QueryRunner`, e.g. `queryRunner.connection` and `queryRunner.manager`
 * now ormconfig is read from `.env`, `.js`, `.json`, `.yml`, `.xml` formats
 * all database-specific types are supported now
 * now migrations generation is supported. Use `typeorm migrations:generate` command
+* `getGeneratedQuery` was renamed to `getQuery` in `QueryBuilder`
+* `getSqlWithParameters` was renamed to `getSqlAndParameters` in `QueryBuilder`
 
 ### OTHER API CHANGES
 

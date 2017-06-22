@@ -91,14 +91,13 @@ export {DefaultNamingStrategy} from "./naming-strategy/DefaultNamingStrategy";
 export {NamingStrategyInterface} from "./naming-strategy/NamingStrategyInterface";
 export {Repository} from "./repository/Repository";
 export {TreeRepository} from "./repository/TreeRepository";
-export {SpecificRepository} from "./repository/SpecificRepository";
 export {MongoRepository} from "./repository/MongoRepository";
 export {FindManyOptions} from "./find-options/FindManyOptions";
 export {InsertEvent} from "./subscriber/event/InsertEvent";
 export {UpdateEvent} from "./subscriber/event/UpdateEvent";
 export {RemoveEvent} from "./subscriber/event/RemoveEvent";
 export {EntitySubscriberInterface} from "./subscriber/EntitySubscriberInterface";
-export {EntityModel} from "./repository/EntityModel";
+export {BaseEntity} from "./repository/BaseEntity";
 
 // -------------------------------------------------------------------------
 // Deprecated

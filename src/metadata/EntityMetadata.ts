@@ -15,7 +15,6 @@ import {Connection} from "../connection/Connection";
 import {EntityListenerMetadata} from "./EntityListenerMetadata";
 import {PropertyTypeFactory} from "./types/PropertyTypeInFunction";
 import {Repository} from "../repository/Repository";
-import {SpecificRepository} from "../repository/SpecificRepository";
 
 /**
  * Contains all entity metadata.
@@ -30,11 +29,6 @@ export class EntityMetadata {
      * Repository used for this entity metadata.
      */
     repository: Repository<any>;
-
-    /**
-     * Specific repository used for this entity metadata.
-     */
-    specificRepository: SpecificRepository<any>;
 
     /**
      * Used to wrap lazy relations.
@@ -444,6 +438,13 @@ export class EntityMetadata {
     }
 
     /**
+     * Finds column with a given property name.
+     */
+    findColumnWithPropertyName(propertyName: string) {
+        return this.columns.find(column => column.propertyName === propertyName);
+    }
+
+    /**
      * Finds relation with the given name.
      */
     findRelationWithDbName(dbName: string): RelationMetadata|undefined {
@@ -603,5 +604,4 @@ export class EntityMetadata {
         this.relations.forEach(relation => OrmUtils.mergeDeep(map, relation.createValueMap(relation.propertyPath)));
         return map;
     }
-
 }

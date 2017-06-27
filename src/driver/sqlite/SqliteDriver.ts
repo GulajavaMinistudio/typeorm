@@ -114,7 +114,7 @@ export class SqliteDriver implements Driver {
 
         // validate options to make sure everything is set
         if (!this.options.database)
-            throw new DriverOptionNotSetError("storage");
+            throw new DriverOptionNotSetError("database");
 
         // load sqlite package
         this.loadDependencies();
@@ -241,22 +241,8 @@ export class SqliteDriver implements Driver {
     /**
      * Escapes a column name.
      */
-    escapeColumn(columnName: string): string {
+    escape(columnName: string): string {
         return "\"" + columnName + "\"";
-    }
-
-    /**
-     * Escapes an alias.
-     */
-    escapeAlias(aliasName: string): string {
-        return "\"" + aliasName + "\"";
-    }
-
-    /**
-     * Escapes a table name.
-     */
-    escapeTable(tableName: string): string {
-        return "\"" + tableName + "\"";
     }
 
     /**

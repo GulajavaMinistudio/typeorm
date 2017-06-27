@@ -94,21 +94,23 @@ export class RawSqlResultsToEntityTransformer {
         let hasData = false;
         metadata.columns.forEach(column => {
             const value = rawResults[0][alias.name + "_" + column.databaseName];
-            if (value === undefined || value === null || column.isVirtual || column.isParentId || column.isDiscriminator)
+            if (value === undefined || column.isVirtual || column.isParentId || column.isDiscriminator)
                 return;
 
             column.setEntityValue(entity, this.driver.prepareHydratedValue(value, column));
-            hasData = true;
+            if (value !== null) // we don't mark it as has data because if we will have all nulls in our object - we don't need such object
+                hasData = true;
         });
 
         if (alias.metadata.parentEntityMetadata) {
             alias.metadata.parentEntityMetadata.columns.forEach(column => {
                 const value = rawResults[0]["parentIdColumn_" + alias.metadata.parentEntityMetadata.tableName + "_" + column.databaseName];
-                if (value === undefined || value === null || column.isVirtual || column.isParentId || column.isDiscriminator)
+                if (value === undefined || column.isVirtual || column.isParentId || column.isDiscriminator)
                     return;
 
                 column.setEntityValue(entity, this.driver.prepareHydratedValue(value, column));
-                hasData = true;
+                if (value !== null) // we don't mark it as has data because if we will have all nulls in our object - we don't need such object
+                    hasData = true;
             });
         }
         return hasData;

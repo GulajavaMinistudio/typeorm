@@ -40,7 +40,8 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Also sets a main string alias of the selection data.
      */
     from<T>(entityTarget: ObjectType<T>|string, aliasName?: string): DeleteQueryBuilder<T> {
-        this.setMainAlias(entityTarget, aliasName);
+        const mainAlias = this.createFromAlias(entityTarget, aliasName);
+        this.expressionMap.setMainAlias(mainAlias);
         return (this as any) as DeleteQueryBuilder<T>;
     }
 
@@ -50,8 +51,24 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * calling this function will override previously set WHERE conditions.
      * Additionally you can add parameters used in where expression.
      */
-    where(where: string, parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "simple", condition: where });
+    where(where: string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Sets WHERE condition in the query builder.
+     * If you had previously WHERE expression defined,
+     * calling this function will override previously set WHERE conditions.
+     * Additionally you can add parameters used in where expression.
+     */
+    where(where: (qb: this) => string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Sets WHERE condition in the query builder.
+     * If you had previously WHERE expression defined,
+     * calling this function will override previously set WHERE conditions.
+     * Additionally you can add parameters used in where expression.
+     */
+    where(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres = [{ type: "simple", condition: typeof where === "string" ? where : where(this) }];
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -60,8 +77,20 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Adds new AND WHERE condition in the query builder.
      * Additionally you can add parameters used in where expression.
      */
-    andWhere(where: string, parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "and", condition: where });
+    andWhere(where: string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Adds new AND WHERE condition in the query builder.
+     * Additionally you can add parameters used in where expression.
+     */
+    andWhere(where: (qb: this) => string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Adds new AND WHERE condition in the query builder.
+     * Additionally you can add parameters used in where expression.
+     */
+    andWhere(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres.push({ type: "and", condition: typeof where === "string" ? where : where(this) });
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -70,8 +99,20 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Adds new OR WHERE condition in the query builder.
      * Additionally you can add parameters used in where expression.
      */
-    orWhere(where: string, parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "or", condition: where });
+    orWhere(where: string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Adds new OR WHERE condition in the query builder.
+     * Additionally you can add parameters used in where expression.
+     */
+    orWhere(where: (qb: this) => string, parameters?: ObjectLiteral): this;
+
+    /**
+     * Adds new OR WHERE condition in the query builder.
+     * Additionally you can add parameters used in where expression.
+     */
+    orWhere(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres.push({ type: "or", condition: typeof where === "string" ? where : where(this) });
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -81,7 +122,7 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      */
     whereInIds(ids: any[]): this {
         const [whereExpression, parameters] = this.createWhereIdsExpression(ids);
-        this.andWhere(whereExpression, parameters);
+        this.where(whereExpression, parameters);
         return this;
     }
 
@@ -111,7 +152,7 @@ export class DeleteQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Creates DELETE express used to perform insert query.
      */
     protected createDeleteExpression() {
-        const tableName = this.escape(this.getTableName());
+        const tableName = this.escape(this.getMainTableName());
         return `DELETE FROM ${tableName}`; // todo: how do we replace aliases in where to nothing?
     }
 

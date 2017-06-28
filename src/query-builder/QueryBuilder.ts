@@ -8,6 +8,7 @@ import {DeleteQueryBuilder} from "./DeleteQueryBuilder";
 import {InsertQueryBuilder} from "./InsertQueryBuilder";
 import {RelationQueryBuilder} from "./RelationQueryBuilder";
 import {ObjectType} from "../common/ObjectType";
+import {Alias} from "./Alias";
 
 // todo: completely cover query builder with tests
 // todo: entityOrProperty can be target name. implement proper behaviour if it is.
@@ -18,13 +19,7 @@ import {ObjectType} from "../common/ObjectType";
 // todo: finish partial selection
 // todo: sugar methods like: .addCount and .selectCount, selectCountAndMap, selectSum, selectSumAndMap, ...
 // todo: implement @Select decorator
-
-// todo: implement subselects for WHERE, FROM, SELECT
-// .fromSubSelect()
-// .whereSubSelect()
-// .addSubSelect()
-// .addSubSelectAndMap()
-// use qb => qb.select().from().where() syntax where needed
+// todo: add select and map functions
 
 // todo: implement relation/entity loading and setting them into properties within a separate query
 // .loadAndMap("post.categories", "post.categories", qb => ...)
@@ -47,14 +42,7 @@ export abstract class QueryBuilder<Entity> {
     /**
      * Query runner used to execute query builder query.
      */
-    protected queryRunner: QueryRunner;
-
-    /**
-     * Indicates if query runner was created by QueryBuilder itself, or came from outside.
-     * If it was created by query builder then it will be released by it once it done.
-     * Otherwise it should be released by owner who sent QueryRunner into this QueryBuilder.
-     */
-    protected ownQueryRunner: boolean;
+    protected queryRunner?: QueryRunner;
 
     /**
      * Contains all properties of the QueryBuilder that needs to be build a final query.
@@ -81,14 +69,12 @@ export abstract class QueryBuilder<Entity> {
     constructor(connectionOrQueryBuilder: Connection|QueryBuilder<any>, queryRunner?: QueryRunner) {
         if (connectionOrQueryBuilder instanceof QueryBuilder) {
             this.connection = connectionOrQueryBuilder.connection;
-            this.queryRunner = connectionOrQueryBuilder.queryRunner || this.connection.createQueryRunner();
-            this.ownQueryRunner = connectionOrQueryBuilder.queryRunner ? false : true;
+            this.queryRunner = connectionOrQueryBuilder.queryRunner;
             this.expressionMap = connectionOrQueryBuilder.expressionMap.clone();
 
         } else {
             this.connection = connectionOrQueryBuilder;
-            this.queryRunner = queryRunner || this.connection.createQueryRunner();
-            this.ownQueryRunner = queryRunner ? false : true;
+            this.queryRunner = queryRunner;
             this.expressionMap = new QueryExpressionMap(this.connection);
         }
     }
@@ -203,8 +189,10 @@ export abstract class QueryBuilder<Entity> {
     update(entityOrTableNameUpdateSet?: string|Function|ObjectLiteral, maybeUpdateSet?: ObjectLiteral): UpdateQueryBuilder<any> {
         const updateSet = maybeUpdateSet ? maybeUpdateSet : entityOrTableNameUpdateSet as ObjectLiteral|undefined;
 
-        if (entityOrTableNameUpdateSet instanceof Function || typeof entityOrTableNameUpdateSet === "string")
-            this.setMainAlias(entityOrTableNameUpdateSet);
+        if (entityOrTableNameUpdateSet instanceof Function || typeof entityOrTableNameUpdateSet === "string") {
+            const mainAlias = this.createFromAlias(entityOrTableNameUpdateSet);
+            this.expressionMap.setMainAlias(mainAlias);
+        }
 
         this.expressionMap.queryType = "update";
         this.expressionMap.valuesSet = updateSet;
@@ -237,7 +225,8 @@ export abstract class QueryBuilder<Entity> {
     relation(entityTarget: Function|string, propertyPath: string): RelationQueryBuilder<Entity> {
         this.expressionMap.queryType = "relation";
         // qb.expressionMap.propertyPath = propertyPath;
-        this.setMainAlias(entityTarget);
+        const mainAlias = this.createFromAlias(entityTarget);
+        this.expressionMap.setMainAlias(mainAlias);
 
         // loading it dynamically because of circular issue
         const RelationQueryBuilderCls = require("./RelationQueryBuilder").RelationQueryBuilder;
@@ -314,12 +303,14 @@ export abstract class QueryBuilder<Entity> {
      */
     async execute(): Promise<any> {
         const [sql, parameters] = this.getSqlAndParameters();
+        const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
-            return await this.queryRunner.query(sql, parameters);  // await is needed here because we are using finally
+            return await queryRunner.query(sql, parameters);  // await is needed here because we are using finally
 
         } finally {
-            if (this.ownQueryRunner) // means we created our own query runner
-                await this.queryRunner.release();
+            if (queryRunner !== this.queryRunner) { // means we created our own query runner
+                await queryRunner.release();
+            }
         }
     }
 
@@ -337,9 +328,7 @@ export abstract class QueryBuilder<Entity> {
      * where queryBuilder is cloned QueryBuilder.
      */
     clone(): this {
-        const qb = this.createQueryBuilder();
-        qb.expressionMap = this.expressionMap.clone();
-        return qb;
+        return new (this.constructor as any)(this);
     }
 
     /**
@@ -366,7 +355,7 @@ export abstract class QueryBuilder<Entity> {
     /**
      * Gets name of the table where insert should be performed.
      */
-    protected getTableName(): string {
+    protected getMainTableName(): string {
         if (!this.expressionMap.mainAlias)
             throw new Error(`Entity where values should be inserted is not specified. Call "qb.into(entity)" method to specify it.`);
 
@@ -380,26 +369,36 @@ export abstract class QueryBuilder<Entity> {
      * Specifies FROM which entity's table select/update/delete will be executed.
      * Also sets a main string alias of the selection data.
      */
-    protected setMainAlias(entityTarget: Function|string, aliasName?: string): this {
+    protected createFromAlias(entityTarget: Function|string|((qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>), aliasName?: string): Alias {
 
         // if table has a metadata then find it to properly escape its properties
         // const metadata = this.connection.entityMetadatas.find(metadata => metadata.tableName === tableName);
         if (this.connection.hasMetadata(entityTarget)) {
-            this.expressionMap.createMainAlias({
+            const metadata = this.connection.getMetadata(entityTarget);
+
+            return this.expressionMap.createAlias({
                 name: aliasName,
                 metadata: this.connection.getMetadata(entityTarget),
+                tableName: metadata.tableName
             });
 
         } else {
+            let subQuery: string = "";
+            if (entityTarget instanceof Function) {
+                const subQueryBuilder: SelectQueryBuilder<any> = (entityTarget as any)(((this as any) as SelectQueryBuilder<any>).subQuery());
+                this.setParameters(subQueryBuilder.getParameters());
+                subQuery = subQueryBuilder.getQuery();
+
+            } else {
+                subQuery = entityTarget;
+            }
             const isSubQuery = entityTarget instanceof Function || entityTarget.substr(0, 1) === "(" && entityTarget.substr(-1) === ")";
-            const subQuery = entityTarget instanceof Function ? entityTarget(((this as any) as SelectQueryBuilder<any>).subQuery()).getQuery() : entityTarget;
-            this.expressionMap.createMainAlias({
+            return this.expressionMap.createAlias({
                 name: aliasName,
                 tableName: isSubQuery === false ? entityTarget as string : undefined,
                 subQuery: isSubQuery === true ? subQuery : undefined,
             });
         }
-        return this;
     }
 
     /**

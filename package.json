@@ -1,7 +1,7 @@
 {
   "name": "typeorm",
   "private": true,
-  "version": "0.1.0-alpha.22",
+  "version": "0.1.0-alpha.23",
   "description": "Data-Mapper ORM for TypeScript, ES7, ES6, ES5. Supports MySQL, PostgreSQL, MariaDB, SQLite, MS SQL Server, Oracle, WebSQL, MongoDB databases.",
   "license": "MIT",
   "readmeFilename": "README.md",
@@ -36,7 +36,7 @@
     "websql-orm"
   ],
   "devDependencies": {
-    "@types/chai": "^4.0.0",
+    "@types/chai": "^4.0.1",
     "@types/chai-as-promised": "0.0.31",
     "@types/mocha": "^2.2.41",
     "@types/node": "^7.0.31",

@@ -2,23 +2,21 @@ import {RawSqlResultsToEntityTransformer} from "./transformer/RawSqlResultsToEnt
 import {ObjectLiteral} from "../common/ObjectLiteral";
 import {SqlServerDriver} from "../driver/sqlserver/SqlServerDriver";
 import {JoinOptions} from "./JoinOptions";
-import {PessimisticLockTransactionRequiredError} from "./error/PessimisticLockTransactionRequiredError";
-import {NoVersionOrUpdateDateColumnError} from "./error/NoVersionOrUpdateDateColumnError";
-import {OptimisticLockVersionMismatchError} from "./error/OptimisticLockVersionMismatchError";
-import {OptimisticLockCanNotBeUsedError} from "./error/OptimisticLockCanNotBeUsedError";
+import {PessimisticLockTransactionRequiredError} from "../error/PessimisticLockTransactionRequiredError";
+import {NoVersionOrUpdateDateColumnError} from "../error/NoVersionOrUpdateDateColumnError";
+import {OptimisticLockVersionMismatchError} from "../error/OptimisticLockVersionMismatchError";
+import {OptimisticLockCanNotBeUsedError} from "../error/OptimisticLockCanNotBeUsedError";
 import {JoinAttribute} from "./JoinAttribute";
 import {RelationIdAttribute} from "./relation-id/RelationIdAttribute";
 import {RelationCountAttribute} from "./relation-count/RelationCountAttribute";
 import {RelationIdLoader} from "./relation-id/RelationIdLoader";
-import {RelationIdLoadResult} from "./relation-id/RelationIdLoadResult";
 import {RelationIdMetadataToAttributeTransformer} from "./relation-id/RelationIdMetadataToAttributeTransformer";
-import {RelationCountLoadResult} from "./relation-count/RelationCountLoadResult";
 import {RelationCountLoader} from "./relation-count/RelationCountLoader";
 import {RelationCountMetadataToAttributeTransformer} from "./relation-count/RelationCountMetadataToAttributeTransformer";
 import {Broadcaster} from "../subscriber/Broadcaster";
 import {QueryBuilder} from "./QueryBuilder";
 import {ReadStream} from "fs";
-import {LockNotSupportedOnGivenDriverError} from "./error/LockNotSupportedOnGivenDriverError";
+import {LockNotSupportedOnGivenDriverError} from "../error/LockNotSupportedOnGivenDriverError";
 import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {PostgresDriver} from "../driver/postgres/PostgresDriver";
 import {OracleDriver} from "../driver/oracle/OracleDriver";
@@ -495,6 +493,29 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
         this.join("LEFT", entityOrProperty, aliasName, condition, options, mapToProperty, false);
         return this;
     }
+
+    /**
+     */
+    // selectAndMap(mapToProperty: string, property: string, aliasName: string, qbFactory: ((qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>)): this;
+
+    /**
+     */
+    // selectAndMap(mapToProperty: string, entity: Function|string, aliasName: string, qbFactory: ((qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>)): this;
+
+    /**
+     */
+    // selectAndMap(mapToProperty: string, tableName: string, aliasName: string, qbFactory: ((qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>)): this;
+
+    /**
+     */
+    // selectAndMap(mapToProperty: string, entityOrProperty: Function|string, aliasName: string, qbFactory: ((qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>)): this {
+    //     const select = new SelectAttribute(this.expressionMap);
+    //     select.mapToProperty = mapToProperty;
+    //     select.entityOrProperty = entityOrProperty;
+    //     select.aliasName = aliasName;
+    //     select.qbFactory = qbFactory;
+    //     return this;
+    // }
 
     /**
      * LEFT JOINs relation id and maps it into some entity's property.

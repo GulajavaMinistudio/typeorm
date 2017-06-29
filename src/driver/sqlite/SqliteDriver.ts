@@ -1,9 +1,9 @@
 import {Driver} from "../Driver";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
-import {DriverPackageNotInstalledError} from "../error/DriverPackageNotInstalledError";
+import {DriverPackageNotInstalledError} from "../../error/DriverPackageNotInstalledError";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {SqliteQueryRunner} from "./SqliteQueryRunner";
-import {DriverOptionNotSetError} from "../error/DriverOptionNotSetError";
+import {DriverOptionNotSetError} from "../../error/DriverOptionNotSetError";
 import {DateUtils} from "../../util/DateUtils";
 import {PlatformTools} from "../../platform/PlatformTools";
 import {Connection} from "../../connection/Connection";
@@ -165,7 +165,7 @@ export class SqliteDriver implements Driver {
         if (value === null || value === undefined)
             return value;
 
-        if (columnMetadata.type === Boolean) {
+        if (columnMetadata.type === Boolean || columnMetadata.type === "boolean") {
             return value === true ? 1 : 0;
 
         } else if (columnMetadata.type === "date") {
@@ -191,7 +191,7 @@ export class SqliteDriver implements Driver {
      * Prepares given value to a value to be persisted, based on its column type or metadata.
      */
     prepareHydratedValue(value: any, columnMetadata: ColumnMetadata): any {
-        if (columnMetadata.type === Boolean) {
+        if (columnMetadata.type === Boolean || columnMetadata.type === "boolean") {
             return value ? true : false;
 
         } else if (columnMetadata.type === "datetime") {

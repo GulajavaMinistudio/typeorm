@@ -4,7 +4,7 @@
  */
 export type WithPrecisionColumnType = "float" // mysql, mssql, oracle, sqlite
     |"double" // mysql, sqlite
-    |"dec" // oracle
+    |"dec" // oracle, mssql
     |"decimal" // mysql, postgres, mssql, sqlite
     |"numeric" // postgres, mssql, sqlite
     |"real" // mysql, postgres, mssql, oracle, sqlite
@@ -28,7 +28,9 @@ export type WithLengthColumnType = "int" // mysql, postgres, mssql, oracle, sqli
     |"char" // mysql, postgres, mssql, oracle
     |"nchar" // mssql, oracle, sqlite
     |"varchar2" // oracle
-    |"nvarchar2"; // oracle, sqlite
+    |"nvarchar2" // oracle, sqlite
+    |"binary" // mssql
+    |"varbinary"; // mssql
 
 /**
  * All other regular column types.
@@ -44,6 +46,7 @@ export type SimpleColumnType =
     |"integer" // postgres, oracle, sqlite
     |"int4" // postgres
     |"int8" // postgres, sqlite
+    |"unsigned big int" // sqlite
     |"float4" // postgres
     |"float8" // postgres
     |"smallserial" // postgres
@@ -76,8 +79,6 @@ export type SimpleColumnType =
     |"bfile" // oracle
     |"clob" // oracle, sqlite
     |"nclob" // oracle
-    |"binary" // mssql
-    |"varbinary" // mssql
     |"image" // mssql
 
     // date types

@@ -6,7 +6,7 @@ import {Column} from "../../../../../../src/decorator/columns/Column";
 export class Post {
 
     @PrimaryColumn()
-    id: string;
+    id: number;
 
     @Column()
     name: string;
@@ -226,7 +226,7 @@ export class Post {
     // Array Type
     // -------------------------------------------------------------------------
 
-    @Column("int", { array: true })
+    @Column("int", { isArray: true })
     array: number[];
 
     // -------------------------------------------------------------------------

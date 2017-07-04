@@ -28,14 +28,14 @@ export class WebsqlQueryRunner implements QueryRunner {
     // -------------------------------------------------------------------------
 
     /**
+     * Database driver used by connection.
+     */
+    driver: WebsqlDriver;
+
+    /**
      * Connection used by this query runner.
      */
     connection: Connection;
-
-    /**
-     * Entity manager isolated for this query runner.
-     */
-    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -76,9 +76,9 @@ export class WebsqlQueryRunner implements QueryRunner {
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(protected driver: WebsqlDriver) {
+    constructor(driver: WebsqlDriver) {
+        this.driver = driver;
         this.connection = driver.connection;
-        this.manager = driver.connection.manager;
     }
 
     // -------------------------------------------------------------------------
@@ -686,7 +686,7 @@ export class WebsqlQueryRunner implements QueryRunner {
         if (column instanceof ColumnMetadata) {
             c += " " + this.driver.normalizeType(column);
         } else {
-            c += " " + column.type;
+            c += " " + column.getFullType(this.connection.driver);
         }
         if (column.isNullable !== true)
             c += " NOT NULL";

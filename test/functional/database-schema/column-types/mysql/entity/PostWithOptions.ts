@@ -41,4 +41,13 @@ export class PostWithOptions {
     @Column("varchar", { length: 30 })
     varchar: string;
 
+    @Column("datetime", { precision: 6 })
+    datetime: Date;
+
+    @Column("timestamp", { precision: 6 })
+    timestamp: Date;
+
+    @Column("time", { precision: 3 })
+    time: string;
+
 }

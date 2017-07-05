@@ -39,6 +39,26 @@ export class DateUtils {
     }
 
     /**
+     * Converts given value into date object.
+     */
+    static mixedDateToDate(mixedDate: Date|string, toUtc?: boolean): Date {
+        const date = typeof mixedDate === "string" ? new Date(mixedDate) : mixedDate;
+
+        if (toUtc)
+            return new Date(
+                date.getUTCFullYear(),
+                date.getUTCMonth(),
+                date.getUTCDate(),
+                date.getUTCHours(),
+                date.getUTCMinutes(),
+                date.getUTCSeconds(),
+                date.getUTCMilliseconds()
+            );
+
+        return date;
+    }
+
+    /**
      * Converts given value into time string in a "HH:mm:ss" format.
      */
     static mixedDateToTimeString(value: Date|any, skipSeconds: boolean = false): string|any {
@@ -96,7 +116,8 @@ export class DateUtils {
                 this.formatZerolessValue(value.getDate()) + " " +
                 this.formatZerolessValue(value.getHours()) + ":" +
                 this.formatZerolessValue(value.getMinutes()) + ":" +
-                this.formatZerolessValue(value.getSeconds());
+                this.formatZerolessValue(value.getSeconds()) + "." +
+                this.formatMilliseconds(value.getUTCMilliseconds());
         }
 
         return value;
@@ -115,7 +136,8 @@ export class DateUtils {
                 this.formatZerolessValue(value.getUTCDate()) + " " +
                 this.formatZerolessValue(value.getUTCHours()) + ":" +
                 this.formatZerolessValue(value.getUTCMinutes()) + ":" +
-                this.formatZerolessValue(value.getUTCSeconds());
+                this.formatZerolessValue(value.getUTCSeconds()) + "." +
+                this.formatMilliseconds(value.getUTCMilliseconds());
         }
 
         return value;
@@ -154,6 +176,16 @@ export class DateUtils {
      */
     private static formatZerolessValue(value: number): string {
         if (value < 10)
+            return "0" + value;
+
+        return String(value);
+    }
+
+    /**
+     * Formats given number to "0x" format, e.g. if it is 1 then it will return "01".
+     */
+    private static formatMilliseconds(value: number): string {
+        if (value < 100)
             return "0" + value;
 
         return String(value);

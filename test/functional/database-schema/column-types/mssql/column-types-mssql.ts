@@ -4,6 +4,7 @@ import {Connection} from "../../../../../src/connection/Connection";
 import {closeTestingConnections, createTestingConnections, reloadTestingDatabases} from "../../../../utils/test-utils";
 import {PostWithOptions} from "./entity/PostWithOptions";
 import {PostWithoutTypes} from "./entity/PostWithoutTypes";
+import {DateUtils} from "../../../../../src/util/DateUtils";
 
 describe("database schema > column types > mssql", () => {
 
@@ -33,7 +34,7 @@ describe("database schema > column types > mssql", () => {
         post.tinyint = 127;
         post.smallint = 32767;
         post.int = 2147483647;
-        post.bigint = "9223372036854775807";
+        post.bigint = "9007199254740991";
         post.decimal = 50;
         post.dec = 100;
         post.numeric = 10;
@@ -50,17 +51,17 @@ describe("database schema > column types > mssql", () => {
         post.binary = new Buffer("A");
         post.varbinary = new Buffer("B");
         post.image = new Buffer("This is image");
+        post.dateObj = new Date();
         post.date = "2017-06-21";
         post.datetime = new Date();
-        post.datetime.setMilliseconds(0);
+        post.datetime.setMilliseconds(0); // set milliseconds to zero because the SQL Server datetime type only has a 1/300 ms (~3.33̅ ms) resolution
         post.datetime2 = new Date();
-        post.datetime2.setMilliseconds(0);
         post.smalldatetime = new Date();
-        post.smalldatetime.setSeconds(0);
-        post.smalldatetime.setMilliseconds(0);
+        post.smalldatetime.setSeconds(0); // set seconds to zero because smalldatetime type rounds seconds
+        post.smalldatetime.setMilliseconds(0); // set milliseconds to zero because smalldatetime type does not stores milliseconds
+        post.timeObj = new Date();
         post.time = "15:30:00";
         post.datetimeoffset = new Date();
-        post.datetimeoffset.setMilliseconds(0);
         post.simpleArray = ["A", "B", "C"];
         await postRepository.save(post);
 
@@ -88,12 +89,14 @@ describe("database schema > column types > mssql", () => {
         loadedPost.binary.toString().should.be.equal(post.binary.toString());
         loadedPost.varbinary.toString().should.be.equal(post.varbinary.toString());
         loadedPost.image.toString().should.be.equal(post.image.toString());
+        loadedPost.dateObj.should.be.equal(DateUtils.mixedDateToDateString(post.dateObj));
         loadedPost.date.should.be.equal(post.date);
-        loadedPost.datetime.valueOf().should.be.equal(post.datetime.valueOf());
-        loadedPost.datetime2.valueOf().should.be.equal(post.datetime2.valueOf());
-        loadedPost.smalldatetime.valueOf().should.be.equal(post.smalldatetime.valueOf());
+        loadedPost.datetime.getTime().should.be.equal(post.datetime.getTime());
+        loadedPost.datetime2.getTime().should.be.equal(post.datetime2.getTime());
+        loadedPost.smalldatetime.getTime().should.be.equal(post.smalldatetime.getTime());
+        loadedPost.timeObj.should.be.equal(DateUtils.mixedTimeToString(post.timeObj));
         loadedPost.time.should.be.equal(post.time);
-        loadedPost.datetimeoffset.valueOf().should.be.equal(post.datetimeoffset.valueOf());
+        loadedPost.datetimeoffset.getTime().should.be.equal(post.datetimeoffset.getTime());
         loadedPost.simpleArray[0].should.be.equal(post.simpleArray[0]);
         loadedPost.simpleArray[1].should.be.equal(post.simpleArray[1]);
         loadedPost.simpleArray[2].should.be.equal(post.simpleArray[2]);
@@ -129,10 +132,12 @@ describe("database schema > column types > mssql", () => {
         tableSchema!.findColumnByName("varbinary")!.length!.should.be.equal(1);
         tableSchema!.findColumnByName("image")!.type.should.be.equal("image");
         tableSchema!.findColumnByName("date")!.type.should.be.equal("date");
+        tableSchema!.findColumnByName("dateObj")!.type.should.be.equal("date");
         tableSchema!.findColumnByName("datetime")!.type.should.be.equal("datetime");
         tableSchema!.findColumnByName("datetime2")!.type.should.be.equal("datetime2");
         tableSchema!.findColumnByName("smalldatetime")!.type.should.be.equal("smalldatetime");
         tableSchema!.findColumnByName("time")!.type.should.be.equal("time");
+        tableSchema!.findColumnByName("timeObj")!.type.should.be.equal("time");
         tableSchema!.findColumnByName("datetimeoffset")!.type.should.be.equal("datetimeoffset");
         tableSchema!.findColumnByName("simpleArray")!.type.should.be.equal("ntext");
 
@@ -216,7 +221,7 @@ describe("database schema > column types > mssql", () => {
         post.bit = true;
         post.binary = new Buffer("A");
         post.datetime = new Date();
-        post.datetime.setMilliseconds(0);
+        post.datetime.setMilliseconds(0); // set milliseconds to zero because the SQL Server datetime type only has a 1/300 ms (~3.33̅ ms) resolution
         await postRepository.save(post);
 
         const loadedPost = (await postRepository.findOneById(1))!;
@@ -224,7 +229,7 @@ describe("database schema > column types > mssql", () => {
         loadedPost.name.should.be.equal(post.name);
         loadedPost.bit.should.be.equal(post.bit);
         loadedPost.binary.toString().should.be.equal(post.binary.toString());
-        loadedPost.datetime.valueOf().should.be.equal(post.datetime.valueOf());
+        loadedPost.datetime.getTime().should.be.equal(post.datetime.getTime());
 
         tableSchema!.findColumnByName("id")!.type.should.be.equal("int");
         tableSchema!.findColumnByName("name")!.type.should.be.equal("nvarchar");

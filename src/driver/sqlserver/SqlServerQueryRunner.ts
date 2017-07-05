@@ -10,7 +10,6 @@ import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
 import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyReleasedError";
 import {SqlServerDriver} from "./SqlServerDriver";
-import {EntityManager} from "../../entity-manager/EntityManager";
 import {Connection} from "../../connection/Connection";
 import {ReadStream} from "fs";
 import {MssqlParameter} from "./MssqlParameter";
@@ -368,42 +367,13 @@ export class SqlServerQueryRunner implements QueryRunner {
         const keys = Object.keys(keyValues);
         const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map((key, index) => "@" + index).join(",");
-        const parameters = keys.map(key => {
-            const value = keyValues[key];
-
-            if (value instanceof MssqlParameter)
-                return value;
-
-            const metadata = this.connection.getMetadata(tableName);
-            if (!metadata)
-                return value;
-
-            const column = metadata.findColumnWithDatabaseName(key);
-            if (!column)
-                return value;
-
-            const normalizedType = this.driver.normalizeType({ type: column.type });
-            if (column.length) {
-                return new MssqlParameter(value, normalizedType as any, column.length as any);
-
-            } else if (column.scale && column.precision) {
-                return new MssqlParameter(value, normalizedType as any, column.scale, column.precision);
-
-            } else if (column.precision) {
-                return new MssqlParameter(value, normalizedType as any, column.precision);
-
-            } else if (column.scale) {
-                return new MssqlParameter(value, normalizedType as any, column.scale);
-            }
-
-            return new MssqlParameter(value, column.type as any);
-        });
-
         const sql = columns.length > 0
             ? `INSERT INTO "${tableName}"(${columns}) ${ generatedColumn ? "OUTPUT INSERTED." + generatedColumn.databaseName + " " : "" }VALUES (${values})`
             : `INSERT INTO "${tableName}" ${ generatedColumn ? "OUTPUT INSERTED." + generatedColumn.databaseName + " " : "" }DEFAULT VALUES `;
 
-        const result = await this.query(sql, parameters);
+        const parameters = this.driver.parametrizeMap(tableName, keyValues);
+        const parametersArray = Object.keys(parameters).map(key => parameters[key]);
+        const result = await this.query(sql, parametersArray);
         return generatedColumn ? result instanceof Array ? result[0][generatedColumn.databaseName] : result[generatedColumn.databaseName] : undefined;
     }
 
@@ -411,6 +381,9 @@ export class SqlServerQueryRunner implements QueryRunner {
      * Updates rows that match given conditions in the given table.
      */
     async update(tableName: string, valuesMap: ObjectLiteral, conditions: ObjectLiteral): Promise<void> {
+        valuesMap = this.driver.parametrizeMap(tableName, valuesMap);
+        conditions = this.driver.parametrizeMap(tableName, conditions);
+
         const conditionParams = Object.keys(conditions).map(key => conditions[key]);
         const updateParams = Object.keys(valuesMap).map(key => valuesMap[key]);
         const allParameters = updateParams.concat(conditionParams);
@@ -426,6 +399,7 @@ export class SqlServerQueryRunner implements QueryRunner {
      * Deletes from the given table by a given conditions.
      */
     async delete(tableName: string, conditions: ObjectLiteral|string, maybeParameters?: any[]): Promise<void> {
+        conditions = typeof conditions === "object" ? this.driver.parametrizeMap(tableName, conditions) : conditions;
         const conditionString = typeof conditions === "string" ? conditions : this.parametrize(conditions).join(" AND ");
         const parameters = conditions instanceof Object ? Object.keys(conditions).map(key => (conditions as ObjectLiteral)[key]) : maybeParameters;
 
@@ -438,7 +412,7 @@ export class SqlServerQueryRunner implements QueryRunner {
      */
     async insertIntoClosureTable(tableName: string, newEntityId: any, parentId: any, hasLevel: boolean): Promise<number> {
         let sql = "";
-        if (hasLevel) {
+        if (hasLevel) { // todo: escape all parameters there
             sql = `INSERT INTO "${tableName}"("ancestor", "descendant", "level") ` +
                 `SELECT "ancestor", ${newEntityId}, "level" + 1 FROM "${tableName}" WHERE "descendant" = ${parentId} ` +
                 `UNION ALL SELECT ${newEntityId}, ${newEntityId}, 1`;

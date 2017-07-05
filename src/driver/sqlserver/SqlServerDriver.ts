@@ -13,8 +13,8 @@ import {RdbmsSchemaBuilder} from "../../schema-builder/RdbmsSchemaBuilder";
 import {SqlServerConnectionOptions} from "./SqlServerConnectionOptions";
 import {MappedColumnTypes} from "../types/MappedColumnTypes";
 import {ColumnType} from "../types/ColumnTypes";
-import {EntityManager} from "../../entity-manager/EntityManager";
 import {DataTypeDefaults} from "../types/DataTypeDefaults";
+import {MssqlParameter} from "./MssqlParameter";
 
 /**
  * Organizes communication with SQL Server DBMS.
@@ -95,9 +95,9 @@ export class SqlServerDriver implements Driver {
      * Column types are driver dependant.
      */
     mappedDataTypes: MappedColumnTypes = {
-        createDate: "datetime",
+        createDate: "datetime2",
         createDateDefault: "getdate()",
-        updateDate: "datetime",
+        updateDate: "datetime2",
         updateDateDefault: "getdate()",
         version: "int",
         treeLevel: "int",
@@ -136,7 +136,7 @@ export class SqlServerDriver implements Driver {
     }
 
     // -------------------------------------------------------------------------
-    // Public Methods
+    // Public Implemented Methods
     // -------------------------------------------------------------------------
 
     /**
@@ -157,7 +157,7 @@ export class SqlServerDriver implements Driver {
 
         // set default useUTC option if it hasn't been set
         if (!options.options) options.options = { useUTC: false };
-        else if (!options.options.useUTC) options.options.useUTC = false; 
+        else if (!options.options.useUTC) options.options.useUTC = false;
 
         // pooling is enabled either when its set explicitly to true,
         // either when its not defined at all (e.g. enabled by default)
@@ -240,7 +240,7 @@ export class SqlServerDriver implements Driver {
             return value === true ? 1 : 0;
 
         } else if (columnMetadata.type === "date") {
-            return DateUtils.mixedDateToDateString(value);
+            return DateUtils.mixedDateToDate(value);
 
         } else if (columnMetadata.type === "time") {
             return DateUtils.mixedTimeToDate(value);
@@ -249,13 +249,11 @@ export class SqlServerDriver implements Driver {
             || columnMetadata.type === "datetime2"
             || columnMetadata.type === "smalldatetime"
             || columnMetadata.type === "datetimeoffset") {
-            return DateUtils.mixedDateToUtcDatetimeString(value);
+            return DateUtils.mixedDateToDate(value, true);
 
         } else if (columnMetadata.type === "simple-array") {
             return DateUtils.simpleArrayToString(value);
 
-        } else if (columnMetadata.type === "float" || columnMetadata.type === "real") {  // this conversion need because when we try to save numeric value, fraction will be cropped
-            return value.toString();
         }
 
         return value;
@@ -273,7 +271,8 @@ export class SqlServerDriver implements Driver {
 
         } else if (columnMetadata.type === "datetime"
             || columnMetadata.type === "datetime2"
-            || columnMetadata.type === "smalldatetime") {
+            || columnMetadata.type === "smalldatetime"
+            || columnMetadata.type === "datetimeoffset") {
             return DateUtils.normalizeHydratedDate(value);
 
         } else if (columnMetadata.type === "date") {
@@ -350,6 +349,61 @@ export class SqlServerDriver implements Driver {
         } else {
             return column.default;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Public Methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * Sql server's parameters needs to be wrapped into special object with type information about this value.
+     * This method wraps given value into MssqlParameter based on its column definition.
+     */
+    parametrizeValue(column: ColumnMetadata, value: any) {
+
+        // if its already MssqlParameter then simply return it
+        if (value instanceof MssqlParameter)
+            return value;
+
+        const normalizedType = this.normalizeType({ type: column.type });
+        if (column.length) {
+            return new MssqlParameter(value, normalizedType as any, column.length as any);
+
+        } else if (column.precision && column.scale) {
+            return new MssqlParameter(value, normalizedType as any, column.precision, column.scale);
+
+        } else if (column.precision) {
+            return new MssqlParameter(value, normalizedType as any, column.precision);
+
+        } else if (column.scale) {
+            return new MssqlParameter(value, normalizedType as any, column.scale);
+        }
+
+        return new MssqlParameter(value, column.type as any);
+    }
+
+    /**
+     * Sql server's parameters needs to be wrapped into special object with type information about this value.
+     * This method wraps all values of the given object into MssqlParameter based on their column definitions in the given table.
+     */
+    parametrizeMap(tableName: string, map: ObjectLiteral): ObjectLiteral {
+
+        // find metadata for the given table
+        const metadata = this.connection.getMetadata(tableName);
+        if (!metadata) // if no metadata found then we can't proceed because we don't have columns and their types
+            return map;
+
+        return Object.keys(map).reduce((newMap, key) => {
+            const value = map[key];
+
+            // find column metadata
+            const column = metadata.findColumnWithDatabaseName(key);
+            if (!column) // if we didn't find a column then we can't proceed because we don't have a column type
+                return value;
+
+            newMap[key] = this.parametrizeValue(column, value);
+            return newMap;
+        }, {} as ObjectLiteral);
     }
 
     // -------------------------------------------------------------------------

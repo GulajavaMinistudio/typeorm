@@ -260,7 +260,7 @@ export class SqlServerQueryRunner implements QueryRunner {
                     if (parameter instanceof MssqlParameter) {
                         const mssqlParameter = this.mssqlParameterToNativeParameter(parameter);
                         if (mssqlParameter) {
-                            request.input(index, this.mssqlParameterToNativeParameter(parameter), parameter.value);
+                            request.input(index, mssqlParameter, parameter.value);
                         } else {
                             request.input(index, parameter.value);
                         }
@@ -502,6 +502,11 @@ export class SqlServerQueryRunner implements QueryRunner {
                     columnSchema.isGenerated = isGenerated;
                     columnSchema.isUnique = isUnique;
                     columnSchema.comment = ""; // todo: less priority, implement this later
+
+                    if (columnSchema.type === "datetime2" || columnSchema.type === "time" || columnSchema.type === "datetimeoffset") {
+                        columnSchema.precision = dbColumn["DATETIME_PRECISION"];
+                    }
+
                     return columnSchema;
                 });
 
@@ -889,7 +894,7 @@ WHERE columnUsages.TABLE_CATALOG = '${this.dbName}' AND tableConstraints.TABLE_C
      * Builds a query for create column.
      */
     protected buildCreateColumnSql(tableName: string, column: ColumnSchema, skipIdentity: boolean, createDefault: boolean) {
-        let c = `"${column.name}" ${column.getFullType(this.connection.driver)}`;
+        let c = `"${column.name}" ${this.connection.driver.createFullType(column)}`;
         if (column.isNullable !== true)
             c += " NOT NULL";
         if (column.isGenerated === true && !skipIdentity) // don't use skipPrimary here since updates can update already exist primary without auto inc.

@@ -11,8 +11,14 @@ export type WithPrecisionColumnType = "float" // mysql, mssql, oracle, sqlite
     |"double precision" // postgres, oracle, sqlite
     |"number" // oracle
     |"datetime" // mssql, mysql, sqlite
+    |"datetime2" // mssql
+    |"datetimeoffset" // mssql
     |"time" // mysql, postgres, mssql
-    |"timestamp"; // mysql, postgres, mssql, oracle
+    |"time with time zone" // postgres
+    |"time without time zone" // postgres
+    |"timestamp" // mysql, postgres, mssql, oracle
+    |"timestamp without time zone" // postgres
+    |"timestamp with time zone"; // postgres, oracle
 
 /**
  * Column types where column length is used.
@@ -85,15 +91,9 @@ export type SimpleColumnType =
     |"image" // mssql
 
     // date types
-    |"timestamp without time zone" // postgres
-    |"timestamp with time zone" // postgres, oracle
     |"timestamp with local time zone" // oracle
-    |"datetime2" // mssql
-    |"datetimeoffset" // mssql
     |"smalldatetime" // mssql
     |"date" // mysql, postgres, mssql, oracle, sqlite
-    |"time with time zone" // postgres
-    |"time without time zone" // postgres
     |"interval year" // oracle
     |"interval day" // oracle
     |"interval" // postgres
@@ -140,8 +140,7 @@ export type ColumnType = WithPrecisionColumnType
     |BooleanConstructor
     |DateConstructor
     |NumberConstructor
-    |StringConstructor
-    |ObjectConstructor;
+    |StringConstructor;
 
 // "string"|"text"|"number"|"integer"|"int"|"smallint"|"bigint"|"float"|"double"|
 // "decimal"|"date"|"time"|"datetime"|"boolean"|"json"|"jsonb"|"simple_array"|"uuid";

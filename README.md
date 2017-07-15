@@ -945,7 +945,7 @@ export class Album {
         cascadeUpdate: true // Allow to update a photo on album save
     })
     @JoinTable()
-    photos: Photo[] = []; // We initialize array for convinience here
+    photos: Photo[];
 }
 ```
   
@@ -961,7 +961,7 @@ export class Photo {
         cascadeInsert: true, // Allow to insert a new album on photo save
         cascadeUpdate: true // Allow to update an album on photo save
     })
-    albums: Album[] = []; // We initialize array for convinience here
+    albums: Album[];
 }
 ```
 
@@ -1002,13 +1002,13 @@ let photo1 = new Photo();
 photo1.name = "Me and Bears";
 photo1.description = "I am near polar bears";
 photo1.filename = "photo-with-bears.jpg";
-photo1.albums.push(album1);
+photo1.albums = [album1];
 
 let photo2 = new Photo();
 photo2.name = "Me and Bears";
 photo2.description = "I am near polar bears";
 photo2.filename = "photo-with-bears.jpg";
-photo2.albums.push(album2);
+photo2.albums = [album1];
 
 // Get entity repository
 let photoRepository = connection.getRepository(Photo);

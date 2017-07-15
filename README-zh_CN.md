@@ -863,7 +863,7 @@ export class Album {
         cascadeRemove: true  // 在移除Album时，会自动移除相册里的Photo
     })
     @JoinTable()
-    photos: Photo[] = []; // 初始化个Photo数组
+    photos: Photo[];
 }
 ```
   
@@ -880,7 +880,7 @@ export class Photo {
         cascadeUpdate: true, // 在更新Album时，会自动更新相册里的Photo 
         cascadeRemove: true  // 在移除Album时，会自动移除相册里的Photo
     })
-    albums: Album[] = []; // 初始化个Album数组
+    albums: Album[];
 }
 ```
 
@@ -921,13 +921,13 @@ let photo1 = new Photo();
 photo1.name = "Me and Bears";
 photo1.description = "I am near polar bears";
 photo1.filename = "photo-with-bears.jpg";
-photo1.albums.push(album1);
+photo1.albums = [album1];
 
 let photo2 = new Photo();
 photo2.name = "Me and Bears";
 photo2.description = "I am near polar bears";
 photo2.filename = "photo-with-bears.jpg";
-photo2.albums.push(album2);
+photo2.albums = [album2];
 
 // 获取Photo的repository
 let photoRepository = connection.getRepository(Photo);

@@ -19,7 +19,7 @@ import {ConnectionOptions} from "../../../src/connection/ConnectionOptions";
 import {PostgresConnectionOptions} from "../../../src/driver/postgres/PostgresConnectionOptions";
 
 describe("Connection", () => {
-    const resourceDir = __dirname + "/../../../../../test/functional/connection/";
+    // const resourceDir = __dirname + "/../../../../../test/functional/connection/";
 
     describe("before connection is established", function() {
 
@@ -196,7 +196,7 @@ describe("Connection", () => {
         after(() => closeTestingConnections(connections));
 
         it("should return sql log properly", () => Promise.all(connections.map(async connection => {
-            const sql = await connection.logSyncSchema();
+            await connection.logSyncSchema();
             // console.log(sql);
         })));
 

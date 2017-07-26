@@ -1,8 +1,9 @@
 import "reflect-metadata";
-import {createTestingConnections, closeTestingConnections, reloadTestingDatabases} from "../../../utils/test-utils";
+import {closeTestingConnections, createTestingConnections, reloadTestingDatabases} from "../../../utils/test-utils";
 import {Connection} from "../../../../src/connection/Connection";
 import {Post} from "./entity/Post";
 import {expect} from "chai";
+import {PostRepository} from "./repository/PostRepository";
 
 describe("transaction > single query runner", () => {
 
@@ -23,6 +24,8 @@ describe("transaction > single query runner", () => {
             expect(transactionalEntityManager.getRepository(Post).queryRunner).to.exist;
             transactionalEntityManager.getRepository(Post).queryRunner!.should.be.equal(originalQueryRunner);
             transactionalEntityManager.getRepository(Post).manager.should.be.equal(transactionalEntityManager);
+
+            transactionalEntityManager.getCustomRepository(PostRepository).getManager().should.be.equal(transactionalEntityManager);
         });
 
     })));

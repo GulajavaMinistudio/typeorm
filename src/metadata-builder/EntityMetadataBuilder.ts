@@ -187,7 +187,7 @@ export class EntityMetadataBuilder {
                         }
                     });
                     metadata.registerColumn(column);
-                    column.build(this.connection.namingStrategy);
+                    column.build(this.connection);
                     return column;
                 });
 
@@ -214,6 +214,18 @@ export class EntityMetadataBuilder {
                         lazyRelationsWrapper.wrap((entityMetadata.target as Function).prototype, relation);
                     });
             });
+
+        entityMetadatas.forEach(entityMetadata => {
+            entityMetadata.columns.forEach(column => {
+                const generated = this.metadataArgsStorage.findGenerated(entityMetadata.target, column.propertyName);
+                if (generated) {
+                    column.isGenerated = true;
+                    column.generationStrategy = generated.strategy;
+                }
+            });
+
+            entityMetadata.generatedColumns = entityMetadata.columns.filter(column => column.isGenerated);
+        });
 
         return entityMetadatas;
     }
@@ -315,12 +327,12 @@ export class EntityMetadataBuilder {
      * Computes all entity metadata's computed properties, and all its sub-metadatas (relations, columns, embeds, etc).
      */
     protected computeEntityMetadata(entityMetadata: EntityMetadata) {
-        entityMetadata.embeddeds.forEach(embedded => embedded.build(this.connection.namingStrategy));
+        entityMetadata.embeddeds.forEach(embedded => embedded.build(this.connection));
         entityMetadata.embeddeds.forEach(embedded => {
-            embedded.columnsFromTree.forEach(column => column.build(this.connection.namingStrategy));
+            embedded.columnsFromTree.forEach(column => column.build(this.connection));
             embedded.relationsFromTree.forEach(relation => relation.build());
         });
-        entityMetadata.ownColumns.forEach(column => column.build(this.connection.namingStrategy));
+        entityMetadata.ownColumns.forEach(column => column.build(this.connection));
         entityMetadata.ownRelations.forEach(relation => relation.build());
         entityMetadata.relations = entityMetadata.embeddeds.reduce((relations, embedded) => relations.concat(embedded.relationsFromTree), entityMetadata.ownRelations);
         entityMetadata.oneToOneRelations = entityMetadata.relations.filter(relation => relation.isOneToOne);
@@ -334,7 +346,7 @@ export class EntityMetadataBuilder {
         entityMetadata.columns = entityMetadata.embeddeds.reduce((columns, embedded) => columns.concat(embedded.columnsFromTree), entityMetadata.ownColumns);
         entityMetadata.primaryColumns = entityMetadata.columns.filter(column => column.isPrimary);
         entityMetadata.hasMultiplePrimaryKeys = entityMetadata.primaryColumns.length > 1;
-        entityMetadata.generatedColumn = entityMetadata.columns.find(column => column.isGenerated);
+        entityMetadata.generatedColumns = entityMetadata.columns.filter(column => column.isGenerated);
         entityMetadata.createDateColumn = entityMetadata.columns.find(column => column.isCreateDate);
         entityMetadata.updateDateColumn = entityMetadata.columns.find(column => column.isUpdateDate);
         entityMetadata.versionColumn = entityMetadata.columns.find(column => column.isVersion);

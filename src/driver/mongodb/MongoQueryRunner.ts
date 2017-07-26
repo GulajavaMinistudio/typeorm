@@ -1,7 +1,6 @@
 import {QueryRunner} from "../../query-runner/QueryRunner";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
-import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
 import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {IndexSchema} from "../../schema-builder/schema/IndexSchema";
@@ -37,8 +36,8 @@ import {
     UpdateWriteOpResult
 } from "./typings";
 import {Connection} from "../../connection/Connection";
-import {EntityManager} from "../../entity-manager/EntityManager";
 import {ReadStream} from "fs";
+import {MongoEntityManager} from "../../entity-manager/MongoEntityManager";
 
 /**
  * Runs queries on a single MongoDB connection.
@@ -53,6 +52,11 @@ export class MongoQueryRunner implements QueryRunner {
      * Connection used by this query runner.
      */
     connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    manager: MongoEntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -390,12 +394,15 @@ export class MongoQueryRunner implements QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of inserted object id.
      */
-    async insert(collectionName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
+    async insert(collectionName: string, keyValues: ObjectLiteral): Promise<any> {
         const results = await this.databaseConnection
             .collection(collectionName)
             .insertOne(keyValues);
-
-        return results.insertedId;
+        const generatedMap = this.connection.getMetadata(collectionName).objectIdColumn!.createValueMap(results.insertedId);
+        return {
+            result: results,
+            generatedMap: generatedMap
+        };
     }
 
     /**
@@ -446,6 +453,13 @@ export class MongoQueryRunner implements QueryRunner {
      */
     async hasTable(collectionName: string): Promise<boolean> {
         throw new Error(`Schema update queries are not supported by MongoDB driver.`);
+    }
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void> {
+        throw new Error(`Schema create queries are not supported by MongoDB driver.`);
     }
 
     /**

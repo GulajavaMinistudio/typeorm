@@ -3,7 +3,6 @@ import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {TransactionAlreadyStartedError} from "../../error/TransactionAlreadyStartedError";
 import {TransactionNotStartedError} from "../../error/TransactionNotStartedError";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
-import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
 import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
@@ -13,6 +12,8 @@ import {SqlServerDriver} from "./SqlServerDriver";
 import {Connection} from "../../connection/Connection";
 import {ReadStream} from "fs";
 import {MssqlParameter} from "./MssqlParameter";
+import {OrmUtils} from "../../util/OrmUtils";
+import {EntityManager} from "../../entity-manager/EntityManager";
 
 /**
  * Runs queries on a single mysql database connection.
@@ -32,6 +33,11 @@ export class SqlServerQueryRunner implements QueryRunner {
      * Connection used by this query runner.
      */
     connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -363,18 +369,29 @@ export class SqlServerQueryRunner implements QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of the generated column if given and generate column exist in the table.
      */
-    async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
+    async insert(tableName: string, keyValues: ObjectLiteral): Promise<any> {
         const keys = Object.keys(keyValues);
         const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map((key, index) => "@" + index).join(",");
+        const generatedColumns = this.connection.hasMetadata(tableName) ? this.connection.getMetadata(tableName).generatedColumns : [];
+        const generatedColumnNames = generatedColumns.map(generatedColumn => `INSERTED."${generatedColumn.databaseName}"`).join(", ");
+        const generatedColumnSql = generatedColumns.length > 0 ? ` OUTPUT ${generatedColumnNames}` : "";
         const sql = columns.length > 0
-            ? `INSERT INTO "${tableName}"(${columns}) ${ generatedColumn ? "OUTPUT INSERTED." + generatedColumn.databaseName + " " : "" }VALUES (${values})`
-            : `INSERT INTO "${tableName}" ${ generatedColumn ? "OUTPUT INSERTED." + generatedColumn.databaseName + " " : "" }DEFAULT VALUES `;
+            ? `INSERT INTO "${tableName}"(${columns}) ${generatedColumnSql} VALUES (${values})`
+            : `INSERT INTO "${tableName}" ${generatedColumnSql} DEFAULT VALUES `;
 
         const parameters = this.driver.parametrizeMap(tableName, keyValues);
         const parametersArray = Object.keys(parameters).map(key => parameters[key]);
         const result = await this.query(sql, parametersArray);
-        return generatedColumn ? result instanceof Array ? result[0][generatedColumn.databaseName] : result[generatedColumn.databaseName] : undefined;
+        const generatedMap = generatedColumns.reduce((map, column) => {
+            const valueMap = column.createValueMap(result[0][column.databaseName]);
+            return OrmUtils.mergeDeep(map, valueMap);
+        }, {} as ObjectLiteral);
+
+        return {
+            result: result,
+            generatedMap: Object.keys(generatedMap).length > 0 ? generatedMap : undefined
+        };
     }
 
     /**
@@ -556,6 +573,13 @@ export class SqlServerQueryRunner implements QueryRunner {
         const sql = `SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG = '${this.dbName}' AND TABLE_NAME = '${tableName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
+    }
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void> {
+        return Promise.resolve();
     }
 
     /**
@@ -897,7 +921,7 @@ WHERE columnUsages.TABLE_CATALOG = '${this.dbName}' AND tableConstraints.TABLE_C
         let c = `"${column.name}" ${this.connection.driver.createFullType(column)}`;
         if (column.isNullable !== true)
             c += " NOT NULL";
-        if (column.isGenerated === true && !skipIdentity) // don't use skipPrimary here since updates can update already exist primary without auto inc.
+        if (column.isGenerated === true && column.generationStrategy === "increment" && !skipIdentity) // don't use skipPrimary here since updates can update already exist primary without auto inc.
             c += " IDENTITY(1,1)";
         // if (column.isPrimary === true && !skipPrimary)
         //     c += " PRIMARY KEY";

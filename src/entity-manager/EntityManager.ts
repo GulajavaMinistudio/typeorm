@@ -22,7 +22,6 @@ import {AbstractRepository} from "../repository/AbstractRepository";
 import {CustomRepositoryCannotInheritRepositoryError} from "../error/CustomRepositoryCannotInheritRepositoryError";
 import {QueryRunner} from "../query-runner/QueryRunner";
 import {SelectQueryBuilder} from "../query-builder/SelectQueryBuilder";
-import {EntityMetadata} from "../metadata/EntityMetadata";
 import {MongoDriver} from "../driver/mongodb/MongoDriver";
 import {RepositoryNotFoundError} from "../error/RepositoryNotFoundError";
 import {RepositoryNotTreeError} from "../error/RepositoryNotTreeError";
@@ -72,8 +71,11 @@ export class EntityManager {
 
     constructor(connection: Connection, queryRunner?: QueryRunner) {
         this.connection = connection;
-        if (queryRunner)
+        if (queryRunner) {
             this.queryRunner = queryRunner;
+            // dynamic: this.queryRunner = manager;
+            Object.assign(this.queryRunner, { manager: this });
+        }
     }
 
     // -------------------------------------------------------------------------

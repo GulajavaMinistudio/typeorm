@@ -3,7 +3,6 @@ import {EntityMetadata} from "./EntityMetadata";
 import {EmbeddedMetadata} from "./EmbeddedMetadata";
 import {RelationMetadata} from "./RelationMetadata";
 import {ObjectLiteral} from "../common/ObjectLiteral";
-import {NamingStrategyInterface} from "../naming-strategy/NamingStrategyInterface";
 import {ColumnMetadataArgs} from "../metadata-args/ColumnMetadataArgs";
 import {Connection} from "../connection/Connection";
 
@@ -59,6 +58,11 @@ export class ColumnMetadata {
      * Indicates if this column is generated (auto increment or generated other way).
      */
     isGenerated: boolean = false;
+
+    /**
+     * Specifies generation strategy if this column will use auto increment.
+     */
+    generationStrategy: "uuid"|"increment";
 
     /**
      * Indicates if column value in the database should be unique or not.
@@ -200,6 +204,8 @@ export class ColumnMetadata {
             this.isPrimary = options.args.options.primary;
         if (options.args.options.generated)
             this.isGenerated = options.args.options.generated;
+        if (options.args.options.generationStrategy)
+            this.generationStrategy = options.args.options.generationStrategy;
         if (options.args.options.unique)
             this.isUnique = options.args.options.unique;
         if (options.args.options.default === null) // to make sure default: null is the same as nullable: true
@@ -372,7 +378,6 @@ export class ColumnMetadata {
                 }
             }
             return undefined;
-            // return embeddedObject ? embeddedObject[this.propertyName] : undefined;
 
         } else { // no embeds - no problems. Simply return column name by property name of the entity
             if (this.relationMetadata && this.referencedColumn && this.isVirtual) {
@@ -381,7 +386,6 @@ export class ColumnMetadata {
             } else {
                 return entity[this.propertyName];
             }
-            // return entity[this.propertyName];
         }
     }
 
@@ -419,10 +423,10 @@ export class ColumnMetadata {
     // Builder Methods
     // ---------------------------------------------------------------------
 
-    build(namingStrategy: NamingStrategyInterface): this {
+    build(connection: Connection): this {
         this.propertyPath = this.buildPropertyPath();
-        this.databaseName = this.buildDatabaseName(namingStrategy);
-        this.databaseNameWithoutPrefixes = namingStrategy.columnName(this.propertyName, this.givenDatabaseName, []);
+        this.databaseName = this.buildDatabaseName(connection);
+        this.databaseNameWithoutPrefixes = connection.namingStrategy.columnName(this.propertyName, this.givenDatabaseName, []);
         return this;
     }
 
@@ -441,9 +445,9 @@ export class ColumnMetadata {
         return path + this.propertyName;
     }
 
-    protected buildDatabaseName(namingStrategy: NamingStrategyInterface): string {
+    protected buildDatabaseName(connection: Connection): string {
         const propertyNames = this.embeddedMetadata ? this.embeddedMetadata.parentPropertyNames : [];
-        return namingStrategy.columnName(this.propertyName, this.givenDatabaseName, propertyNames);
+        return connection.namingStrategy.columnName(this.propertyName, this.givenDatabaseName, propertyNames);
     }
 
 }

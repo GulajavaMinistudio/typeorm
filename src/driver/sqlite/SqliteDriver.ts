@@ -14,6 +14,7 @@ import {ColumnType} from "../types/ColumnTypes";
 import {QueryRunner} from "../../query-runner/QueryRunner";
 import {DataTypeDefaults} from "../types/DataTypeDefaults";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
+import {RandomGenerator} from "../../util/RandomGenerator";
 
 /**
  * Organizes communication with sqlite DBMS.
@@ -192,6 +193,9 @@ export class SqliteDriver implements Driver {
         } else if (columnMetadata.type === "datetime") {
             return DateUtils.mixedDateToUtcDatetimeString(value); // to string conversation needs because SQLite stores fate as integer number, when date came as Object
 
+        } else if (columnMetadata.isGenerated && columnMetadata.generationStrategy === "uuid" && !value) {
+            return RandomGenerator.uuid4();
+
         } else if (columnMetadata.type === "simple-array") {
             return DateUtils.simpleArrayToString(value);
         }
@@ -265,30 +269,30 @@ export class SqliteDriver implements Driver {
      * Creates a database type from a given column metadata.
      */
     normalizeType(column: { type?: ColumnType, length?: number, precision?: number, scale?: number }): string {
-        let type = "";
         if (column.type === Number || column.type === "int") {
-            type += "integer";
+            return "integer";
 
         } else if (column.type === String) {
-            type += "varchar";
+            return "varchar";
 
         } else if (column.type === Date) {
-            type += "datetime";
+            return "datetime";
 
         } else if ((column.type as any) === Buffer) {
-            type += "blob";
+            return "blob";
 
         } else if (column.type === Boolean) {
-            type += "boolean";
+            return "boolean";
+
+        } else if (column.type === "uuid") {
+            return "varchar";
 
         } else if (column.type === "simple-array") {
-            type += "text";
+            return "text";
 
         } else {
-            type += column.type;
+            return column.type as string || "";
         }
-
-        return type;
     }
 
     /**

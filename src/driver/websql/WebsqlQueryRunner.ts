@@ -11,6 +11,9 @@ import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyRel
 import {WebsqlDriver} from "./WebsqlDriver";
 import {Connection} from "../../connection/Connection";
 import {ReadStream} from "fs";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {OrmUtils} from "../../util/OrmUtils";
+import {InsertResult} from "../InsertResult";
 
 /**
  * Declare a global function that is only available in browsers that support WebSQL.
@@ -35,6 +38,11 @@ export class WebsqlQueryRunner implements QueryRunner {
      * Connection used by this query runner.
      */
     connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -206,23 +214,31 @@ export class WebsqlQueryRunner implements QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of the generated column if given and generate column exist in the table.
      */
-    async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
+    async insert(tableName: string, keyValues: ObjectLiteral): Promise<InsertResult> {
         const keys = Object.keys(keyValues);
         const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map((key, index) => "$" + (index + 1)).join(",");
+        const generatedColumns = this.connection.hasMetadata(tableName) ? this.connection.getMetadata(tableName).generatedColumns : [];
         const sql = columns.length > 0 ? (`INSERT INTO "${tableName}"(${columns}) VALUES (${values})`) : `INSERT INTO "${tableName}" DEFAULT VALUES`;
         const parameters = keys.map(key => keyValues[key]);
 
-        return new Promise<any[]>(async (ok, fail) => {
+        return new Promise<InsertResult>(async (ok, fail) => {
             this.driver.connection.logger.logQuery(sql, parameters, this);
 
             const db = await this.connect();
             // todo: check if transaction is not active
             db.transaction((tx: any) => {
                 tx.executeSql(sql, parameters, (tx: any, result: any) => {
-                    if (generatedColumn)
-                        return ok(result["insertId"]);
-                    ok();
+                    const generatedMap = generatedColumns.reduce((map, generatedColumn) => {
+                        const value = generatedColumn.isPrimary && generatedColumn.generationStrategy === "increment" && result["insertId"] ? result["insertId"] : keyValues[generatedColumn.databaseName];
+                        if (!value) return map;
+                        return OrmUtils.mergeDeep(map, generatedColumn.createValueMap(value));
+                    }, {} as ObjectLiteral);
+
+                    ok({
+                        result: undefined,
+                        generatedMap: Object.keys(generatedMap).length > 0 ? generatedMap : undefined
+                    });
 
                 }, (tx: any, err: any) => {
                     this.driver.connection.logger.logFailedQuery(sql, parameters, this);
@@ -409,6 +425,13 @@ export class WebsqlQueryRunner implements QueryRunner {
         const sql = `SELECT * FROM sqlite_master WHERE type = 'table' AND name = ${tableName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
+    }
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void> {
+        return Promise.resolve();
     }
 
     /**

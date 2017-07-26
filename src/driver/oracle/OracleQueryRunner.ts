@@ -12,6 +12,7 @@ import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyRel
 import {OracleDriver} from "./OracleDriver";
 import {Connection} from "../../connection/Connection";
 import {ReadStream} from "fs";
+import {EntityManager} from "../../entity-manager/EntityManager";
 
 /**
  * Runs queries on a single oracle database connection.
@@ -33,6 +34,11 @@ export class OracleQueryRunner implements QueryRunner {
      * Connection used by this query runner.
      */
     connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -198,11 +204,16 @@ export class OracleQueryRunner implements QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of the generated column if given and generate column exist in the table.
      */
-    async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
+    async insert(tableName: string, keyValues: ObjectLiteral): Promise<any> {
+        // todo: fix generated columns
+        let generatedColumn: ColumnMetadata|undefined;
         const keys = Object.keys(keyValues);
         const columns = keys.map(key => `"${key}"`).join(", ");
         const values = keys.map(key => ":" + key).join(", ");
         const parameters = keys.map(key => keyValues[key]);
+        const generatedColumns = this.connection.hasMetadata(tableName) ? this.connection.getMetadata(tableName).generatedColumns : [];
+        if (generatedColumns.length > 0)
+            generatedColumn = generatedColumns.find(column => column.isPrimary && column.isGenerated);
 
         const insertSql = columns.length > 0
             ? `INSERT INTO "${tableName}" (${columns}) VALUES (${values})`
@@ -286,8 +297,8 @@ export class OracleQueryRunner implements QueryRunner {
                                 FROM USER_INDEXES ind, USER_IND_COLUMNS cols 
                                 WHERE ind.INDEX_NAME = cols.INDEX_NAME AND ind.TABLE_NAME IN (${tableNamesString})
                                 GROUP BY ind.INDEX_NAME, ind.TABLE_NAME, ind.UNIQUENESS`;
-        const foreignKeysSql = `SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '${this.dbName}' AND REFERENCED_COLUMN_NAME IS NOT NULL`;
-        const uniqueKeysSql  = `SELECT * FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '${this.dbName}' AND CONSTRAINT_TYPE = 'UNIQUE'`;
+        // const foreignKeysSql = `SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '${this.dbName}' AND REFERENCED_COLUMN_NAME IS NOT NULL`;
+        // const uniqueKeysSql  = `SELECT * FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '${this.dbName}' AND CONSTRAINT_TYPE = 'UNIQUE'`;
         const constraintsSql = `SELECT cols.table_name, cols.column_name, cols.position, cons.constraint_type, cons.constraint_name
 FROM all_constraints cons, all_cons_columns cols WHERE cols.table_name IN (${tableNamesString}) 
 AND cons.constraint_name = cols.constraint_name AND cons.owner = cols.owner ORDER BY cols.table_name, cols.position`;
@@ -343,10 +354,10 @@ AND cons.constraint_name = cols.constraint_name AND cons.owner = cols.owner ORDE
 
             // create primary key schema
             tableSchema.primaryKeys = constraints
-                .filter(constraint => 
+                .filter(constraint =>
                     constraint["TABLE_NAME"] === tableSchema.name && constraint["CONSTRAINT_TYPE"] === "P"
                 )
-                .map(constraint => 
+                .map(constraint =>
                     new PrimaryKeySchema(constraint["CONSTRAINT_NAME"], constraint["COLUMN_NAME"])
                 );
 
@@ -377,6 +388,13 @@ AND cons.constraint_name = cols.constraint_name AND cons.owner = cols.owner ORDE
         const sql = `SELECT TABLE_NAME FROM user_tables WHERE TABLE_NAME = '${tableName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
+    }
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void> {
+        return Promise.resolve();
     }
 
     /**

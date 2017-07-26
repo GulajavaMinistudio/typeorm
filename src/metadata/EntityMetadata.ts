@@ -14,7 +14,6 @@ import {TableMetadataArgs} from "../metadata-args/TableMetadataArgs";
 import {Connection} from "../connection/Connection";
 import {EntityListenerMetadata} from "./EntityListenerMetadata";
 import {PropertyTypeFactory} from "./types/PropertyTypeInFunction";
-import {Repository} from "../repository/Repository";
 
 /**
  * Contains all entity metadata.
@@ -189,7 +188,7 @@ export class EntityMetadata {
     /**
      * Gets the column with generated flag.
      */
-    generatedColumn?: ColumnMetadata;
+    generatedColumns: ColumnMetadata[] = [];
 
     /**
      * Gets the object id column used with mongodb database.
@@ -478,7 +477,7 @@ export class EntityMetadata {
 
         return this.primaryColumns.reduce((map, column, index) => {
             return OrmUtils.mergeDeep(map, column.createValueMap(ids[index]));
-        }, {});
+        }, {} as ObjectLiteral);
     }
 
     /**

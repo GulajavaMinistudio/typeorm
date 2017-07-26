@@ -3,7 +3,6 @@ import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {TransactionAlreadyStartedError} from "../../error/TransactionAlreadyStartedError";
 import {TransactionNotStartedError} from "../../error/TransactionNotStartedError";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
-import {ColumnMetadata} from "../../metadata/ColumnMetadata";
 import {TableSchema} from "../../schema-builder/schema/TableSchema";
 import {ForeignKeySchema} from "../../schema-builder/schema/ForeignKeySchema";
 import {PrimaryKeySchema} from "../../schema-builder/schema/PrimaryKeySchema";
@@ -12,6 +11,9 @@ import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyRel
 import {MysqlDriver} from "./MysqlDriver";
 import {Connection} from "../../connection/Connection";
 import {ReadStream} from "fs";
+import {EntityManager} from "../../entity-manager/EntityManager";
+import {OrmUtils} from "../../util/OrmUtils";
+import {InsertResult} from "../InsertResult";
 
 /**
  * Runs queries on a single mysql database connection.
@@ -31,6 +33,11 @@ export class MysqlQueryRunner implements QueryRunner {
      * Connection used by this query runner.
      */
     connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -190,14 +197,25 @@ export class MysqlQueryRunner implements QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of the generated column if given and generate column exist in the table.
      */
-    async insert(tableName: string, keyValues: ObjectLiteral, generatedColumn?: ColumnMetadata): Promise<any> {
+    async insert(tableName: string, keyValues: ObjectLiteral): Promise<InsertResult> {
         const keys = Object.keys(keyValues);
         const columns = keys.map(key => `\`${key}\``).join(", ");
         const values = keys.map(key => "?").join(",");
         const parameters = keys.map(key => keyValues[key]);
+        const generatedColumns = this.connection.hasMetadata(tableName) ? this.connection.getMetadata(tableName).generatedColumns : [];
         const sql = `INSERT INTO \`${tableName}\`(${columns}) VALUES (${values})`;
         const result = await this.query(sql, parameters);
-        return generatedColumn ? result.insertId : undefined;
+
+        const generatedMap = generatedColumns.reduce((map, generatedColumn) => {
+            const value = generatedColumn.isPrimary && result.insertId ? result.insertId : keyValues[generatedColumn.databaseName];
+            if (!value) return map;
+            return OrmUtils.mergeDeep(map, generatedColumn.createValueMap(value));
+        }, {} as ObjectLiteral);
+
+        return {
+            result: result,
+            generatedMap: Object.keys(generatedMap).length > 0 ? generatedMap : undefined
+        };
     }
 
     /**
@@ -392,6 +410,13 @@ export class MysqlQueryRunner implements QueryRunner {
         const sql = `SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '${this.dbName}' AND TABLE_NAME = '${tableName}' AND COLUMN_NAME = '${columnName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
+    }
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void> {
+        return Promise.resolve();
     }
 
     /**
@@ -732,7 +757,7 @@ export class MysqlQueryRunner implements QueryRunner {
             c += " UNIQUE";
         if (column.isGenerated && column.isPrimary && !skipPrimary)
             c += " PRIMARY KEY";
-        if (column.isGenerated === true) // don't use skipPrimary here since updates can update already exist primary without auto inc.
+        if (column.isGenerated === true && column.generationStrategy === "increment") // don't use skipPrimary here since updates can update already exist primary without auto inc.
             c += " AUTO_INCREMENT";
         if (column.comment)
             c += " COMMENT '" + column.comment + "'";

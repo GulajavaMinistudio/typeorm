@@ -1,10 +1,11 @@
 import {ColumnSchema} from "../schema-builder/schema/ColumnSchema";
-import {ColumnMetadata} from "../metadata/ColumnMetadata";
 import {TableSchema} from "../schema-builder/schema/TableSchema";
 import {ForeignKeySchema} from "../schema-builder/schema/ForeignKeySchema";
 import {IndexSchema} from "../schema-builder/schema/IndexSchema";
 import {Connection} from "../connection/Connection";
 import {ReadStream} from "fs";
+import {InsertResult} from "../driver/InsertResult";
+import {EntityManager} from "../entity-manager/EntityManager";
 
 /**
  * Runs queries on a single database connection.
@@ -17,6 +18,11 @@ export interface QueryRunner {
      * Connection used by this query runner.
      */
     readonly connection: Connection;
+
+    /**
+     * Isolated entity manager working only with current query runner.
+     */
+    readonly manager: EntityManager;
 
     /**
      * Indicates if connection for this query runner is released.
@@ -79,7 +85,7 @@ export interface QueryRunner {
      * Insert a new row with given values into the given table.
      * Returns value of the generated column if given and generate column exist in the table.
      */
-    insert(tableName: string, valuesMap: Object, generatedColumn?: ColumnMetadata): Promise<any>;
+    insert(tableName: string, valuesMap: Object): Promise<InsertResult>;
 
     /**
      * Updates rows that match given simple conditions in the given table.
@@ -115,6 +121,11 @@ export interface QueryRunner {
      * Checks if table with the given name exist in the database.
      */
     hasTable(tableName: string): Promise<boolean>;
+
+    /**
+     * Creates a schema if it's not created.
+     */
+    createSchema(): Promise<void>;
 
     /**
      * Creates a new table from the given table metadata and column metadatas.

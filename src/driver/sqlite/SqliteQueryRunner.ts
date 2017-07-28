@@ -56,6 +56,12 @@ export class SqliteQueryRunner implements QueryRunner {
      */
     isTransactionActive = false;
 
+    /**
+     * Stores temporarily user data.
+     * Useful for sharing data with subscribers.
+     */
+    data = {};
+
     // -------------------------------------------------------------------------
     // Protected Properties
     // -------------------------------------------------------------------------
@@ -144,7 +150,16 @@ export class SqliteQueryRunner implements QueryRunner {
         return new Promise<any[]>(async (ok, fail) => {
             const databaseConnection = await this.connect();
             this.driver.connection.logger.logQuery(query, parameters, this);
+            const queryStartTime = +new Date();
             databaseConnection.all(query, parameters, (err: any, result: any) => {
+
+                // log slow queries if maxQueryExecution time is set
+                const maxQueryExecutionTime = this.driver.connection.options.maxQueryExecutionTime;
+                const queryEndTime = +new Date();
+                const queryExecutionTime = queryEndTime - queryStartTime;
+                if (maxQueryExecutionTime && queryExecutionTime > maxQueryExecutionTime)
+                    this.driver.connection.logger.logQuerySlow(queryExecutionTime, query, parameters, this);
+
                 if (err) {
                     this.driver.connection.logger.logQueryError(err, query, parameters, this);
                     fail(new QueryFailedError(query, parameters, err));

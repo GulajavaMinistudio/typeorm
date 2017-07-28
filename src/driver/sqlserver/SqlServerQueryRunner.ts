@@ -51,6 +51,12 @@ export class SqlServerQueryRunner implements QueryRunner {
      */
     isTransactionActive = false;
 
+    /**
+     * Stores temporarily user data.
+     * Useful for sharing data with subscribers.
+     */
+    data = {};
+
     // -------------------------------------------------------------------------
     // Protected Properties
     // -------------------------------------------------------------------------
@@ -276,7 +282,15 @@ export class SqlServerQueryRunner implements QueryRunner {
                     }
                 });
             }
+            const queryStartTime = +new Date();
             request.query(query, (err: any, result: any) => {
+
+                // log slow queries if maxQueryExecution time is set
+                const maxQueryExecutionTime = this.driver.connection.options.maxQueryExecutionTime;
+                const queryEndTime = +new Date();
+                const queryExecutionTime = queryEndTime - queryStartTime;
+                if (maxQueryExecutionTime && queryExecutionTime > maxQueryExecutionTime)
+                    this.driver.connection.logger.logQuerySlow(queryExecutionTime, query, parameters, this);
 
                 const resolveChain = () => {
                     if (promiseIndex !== -1)

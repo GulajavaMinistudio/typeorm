@@ -1,10 +1,10 @@
 # Logging
 
-* Enabling logging
-* Logging options
-* Log long-running sql queries
-* Changing default logger
-* Using custom logger
+* [Enabling logging](#enabling-logging)
+* [Logging options](#logging-options)
+* [Log long-running queries](#log-long-running-queries)
+* [Changing default logger](#changing-default-logger)
+* [Using custom logger](#using-custom-logger)
 
 ## Enabling logging
 
@@ -24,7 +24,7 @@ You can enable all queries logging by simply setting `logging: true` in your con
 }
 ```
 
-This configuration will enable all executing queries logging + errors of failed queries.
+This configuration will enable all executed queries logging and failed query errors.
 
 ## Logging options
 
@@ -78,7 +78,7 @@ by setting `maxQueryExecutionTime` option in connection options:
     host: "localhost",
     ...
     maxQueryExecutionTime: 1000
-});
+}
 ```
 
 This code will log all queries which run more then `1 second`.
@@ -88,7 +88,7 @@ This code will log all queries which run more then `1 second`.
 There are several loggers TypeORM ships with 3 different types of loggers:
 
 * `advanced-console` - this is default logger which logs all messages into console using color 
-and sql syntax highlighting (using [chalk]() package)
+and sql syntax highlighting (using [chalk](https://github.com/chalk/chalk) package)
 * `simple-console` - this is simple console logger which is exactly the same as advanced, but it does not use any color highlighting.
 This logger can be used if you have problems / or don't like colorized logs
 * `file` - this logger writes all logs into `ormlogs.log` file in the root folder of your project (near `package.json` and `ormconfig.json`)
@@ -99,8 +99,8 @@ You can enable any of them in connection options this way:
 {
     host: "localhost",
     ...
-    logger: "simple-console",
-    logging: true
+    logging: true,
+    logger: "file"
 }
 ```
 
@@ -152,4 +152,18 @@ getConnectionOptions().then(connectionOptions => {
         logger: new MyCustomLogger()
     }))
 });
+```
+
+Logger methods can accept `QueryRunner` when its available. Its helpful if you want to log additional data.
+Also via query runner you can get access to additional data passed during persist/remove. For example:
+
+```typescript
+// user sends request during entity save
+postRepository.save(post, { data: { request: request } });
+
+// in logger you can access it this way:
+logQuery(query: string, parameters?: any[], queryRunner?: QueryRunner) {
+    const requestUrl = queryRunner && queryRunner.data["request"] ? "(" + queryRunner.data["request"].url + ") " : "";
+    console.log(requestUrl + "executing query: " + sql);
+}
 ```

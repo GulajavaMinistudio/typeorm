@@ -71,10 +71,20 @@ export * from "./decorator/Generated";
 export * from "./decorator/Embedded";
 export * from "./decorator/DiscriminatorValue";
 export * from "./decorator/EntityRepository";
+export * from "./find-options/FindOneOptions";
+export * from "./find-options/FindManyOptions";
 export * from "./logger/Logger";
 export * from "./logger/AdvancedConsoleLogger";
 export * from "./logger/SimpleConsoleLogger";
 export * from "./logger/FileLogger";
+export * from "./entity-manager/EntityManager";
+export * from "./repository/AbstractRepository";
+export * from "./repository/Repository";
+export * from "./repository/BaseEntity";
+export * from "./repository/TreeRepository";
+export * from "./repository/MongoRepository";
+export * from "./repository/RemoveOptions";
+export * from "./repository/SaveOptions";
 export * from "./schema-builder/schema/ColumnSchema";
 export * from "./schema-builder/schema/ForeignKeySchema";
 export * from "./schema-builder/schema/IndexSchema";
@@ -192,7 +202,7 @@ export function getConnection(connectionName: string = "default"): Connection {
  * Gets entity manager from the connection.
  * If connection name wasn't specified, then "default" connection will be retrieved.
  */
-export function getEntityManager(connectionName: string = "default"): EntityManager {
+export function getManager(connectionName: string = "default"): EntityManager {
     return getConnectionManager().get(connectionName).manager;
 }
 
@@ -211,8 +221,25 @@ export function getTreeRepository<Entity>(entityClass: ObjectType<Entity>|string
 }
 
 /**
+ * Gets tree repository for the given entity class.
+ */
+export function getCustomRepository<T>(customRepository: ObjectType<T>, connectionName: string = "default"): T {
+    return getConnectionManager().get(connectionName).getCustomRepository(customRepository);
+}
+
+/**
  * Gets mongodb repository for the given entity class or name.
  */
 export function getMongoRepository<Entity>(entityClass: ObjectType<Entity>|string, connectionName: string = "default"): MongoRepository<Entity> {
     return getConnectionManager().get(connectionName).getMongoRepository<Entity>(entityClass);
+}
+
+/**
+ * Gets entity manager from the connection.
+ * If connection name wasn't specified, then "default" connection will be retrieved.
+ *
+ * @deprecated use getManager instead
+ */
+export function getEntityManager(connectionName: string = "default"): EntityManager {
+    return getManager(connectionName);
 }

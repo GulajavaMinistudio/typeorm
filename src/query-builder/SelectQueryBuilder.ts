@@ -14,7 +14,7 @@ import {RelationCountLoader} from "./relation-count/RelationCountLoader";
 import {RelationCountMetadataToAttributeTransformer} from "./relation-count/RelationCountMetadataToAttributeTransformer";
 import {Broadcaster} from "../subscriber/Broadcaster";
 import {QueryBuilder} from "./QueryBuilder";
-import {ReadStream} from "fs";
+import {ReadStream} from "../platform/PlatformTools";
 import {LockNotSupportedOnGivenDriverError} from "../error/LockNotSupportedOnGivenDriverError";
 import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {PostgresDriver} from "../driver/postgres/PostgresDriver";
@@ -1439,7 +1439,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
                 if (index === 0) {
                     return `DISTINCT(${distinctAlias}.${propertyName})`;
                 } else {
-                    return `${distinctAlias}.${propertyName})`;
+                    return `${distinctAlias}.${propertyName}`;
                 }
             }).join(", ") + ") as \"cnt\"";
 

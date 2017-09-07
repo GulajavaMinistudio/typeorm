@@ -26,11 +26,13 @@ import {OrderByCondition} from "../find-options/OrderByCondition";
 import {QueryExpressionMap} from "./QueryExpressionMap";
 import {ObjectType} from "../common/ObjectType";
 import {QueryRunner} from "../query-runner/QueryRunner";
+import {WhereExpression} from "./WhereExpression";
+import {Brackets} from "./Brackets";
 
 /**
  * Allows to build complex sql queries in a fashion way and execute those queries.
  */
-export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
+export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements WhereExpression {
 
     // -------------------------------------------------------------------------
     // Public Implemented Methods
@@ -64,6 +66,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      */
     subQuery(): SelectQueryBuilder<any> {
         const qb = this.createQueryBuilder();
+        qb.queryRunner = this.queryRunner;
         qb.expressionMap.subQuery = true;
         return qb;
     }
@@ -72,25 +75,25 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Creates SELECT query.
      * Replaces all previous selections if they exist.
      */
-    select(): SelectQueryBuilder<Entity>;
+    select(): this;
 
     /**
      * Creates SELECT query.
      * Replaces all previous selections if they exist.
      */
-    select(selection: (qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>, selectionAliasName?: string): SelectQueryBuilder<Entity>;
+    select(selection: (qb: SelectQueryBuilder<any>) => SelectQueryBuilder<any>, selectionAliasName?: string): this;
 
     /**
      * Creates SELECT query and selects given data.
      * Replaces all previous selections if they exist.
      */
-    select(selection: string, selectionAliasName?: string): SelectQueryBuilder<Entity>;
+    select(selection: string, selectionAliasName?: string): this;
 
     /**
      * Creates SELECT query and selects given data.
      * Replaces all previous selections if they exist.
      */
-    select(selection: string[]): SelectQueryBuilder<Entity>;
+    select(selection: string[]): this;
 
     /**
      * Creates SELECT query and selects given data.
@@ -608,24 +611,8 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * calling this function will override previously set WHERE conditions.
      * Additionally you can add parameters used in where expression.
      */
-    where(where: string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Sets WHERE condition in the query builder.
-     * If you had previously WHERE expression defined,
-     * calling this function will override previously set WHERE conditions.
-     * Additionally you can add parameters used in where expression.
-     */
-    where(where: (qb: this) => string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Sets WHERE condition in the query builder.
-     * If you had previously WHERE expression defined,
-     * calling this function will override previously set WHERE conditions.
-     * Additionally you can add parameters used in where expression.
-     */
-    where(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres = [{ type: "simple", condition: typeof where === "string" ? where : where(this) }];
+    where(where: Brackets|string|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres = [{ type: "simple", condition: this.computeWhereParameter(where) }];
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -634,20 +621,8 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Adds new AND WHERE condition in the query builder.
      * Additionally you can add parameters used in where expression.
      */
-    andWhere(where: string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Adds new AND WHERE condition in the query builder.
-     * Additionally you can add parameters used in where expression.
-     */
-    andWhere(where: (qb: this) => string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Adds new AND WHERE condition in the query builder.
-     * Additionally you can add parameters used in where expression.
-     */
-    andWhere(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "and", condition: typeof where === "string" ? where : where(this) });
+    andWhere(where: string|Brackets|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres.push({ type: "and", condition: this.computeWhereParameter(where) });
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -656,20 +631,8 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Adds new OR WHERE condition in the query builder.
      * Additionally you can add parameters used in where expression.
      */
-    orWhere(where: string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Adds new OR WHERE condition in the query builder.
-     * Additionally you can add parameters used in where expression.
-     */
-    orWhere(where: (qb: this) => string, parameters?: ObjectLiteral): this;
-
-    /**
-     * Adds new OR WHERE condition in the query builder.
-     * Additionally you can add parameters used in where expression.
-     */
-    orWhere(where: string|((qb: this) => string), parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "or", condition: typeof where === "string" ? where : where(this) });
+    orWhere(where: Brackets|string|((qb: this) => string), parameters?: ObjectLiteral): this {
+        this.expressionMap.wheres.push({ type: "or", condition: this.computeWhereParameter(where) });
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -923,6 +886,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
         if (this.expressionMap.lockMode === "optimistic")
             throw new OptimisticLockCanNotBeUsedError();
 
+        this.expressionMap.queryEntity = false;
         const results = await this.execute();
         return results[0];
 
@@ -935,6 +899,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
         if (this.expressionMap.lockMode === "optimistic")
             throw new OptimisticLockCanNotBeUsedError();
 
+        this.expressionMap.queryEntity = false;
         return this.execute();
     }
 
@@ -944,6 +909,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
     async getRawAndEntities(): Promise<{ entities: Entity[], raw: any[] }> {
         const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
+            this.expressionMap.queryEntity = true;
             return await this.executeEntitiesAndRawResults(queryRunner);
 
         } finally {
@@ -1016,11 +982,9 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
 
         const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
-            const result = await Promise.all([
-                this.executeEntitiesAndRawResults(queryRunner),
-                this.executeCountQuery(queryRunner)
-            ]);
-            return [result[0].entities, result[1]];
+            const entitiesAndRaw = await this.executeEntitiesAndRawResults(queryRunner);
+            const count = await this.executeCountQuery(queryRunner);
+            return [entitiesAndRaw.entities, count];
 
         } finally {
             if (queryRunner !== this.queryRunner) // means we created our own query runner
@@ -1032,6 +996,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
      * Executes built SQL query and returns raw data stream.
      */
     async stream(): Promise<ReadStream> {
+        this.expressionMap.queryEntity = false;
         const [sql, parameters] = this.getSqlAndParameters();
         const queryRunner = this.queryRunner || this.connection.createQueryRunner();
         try {
@@ -1408,12 +1373,19 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
             return this.expressionMap.selects.some(select => select.selection === aliasName + "." + column.propertyName);
         });
 
-        return columns.map(column => {
+        // if user used partial selection and did not select some primary columns which are required to be selected
+        // we select those primary columns and mark them as "virtual". Later virtual column values will be removed from final entity
+        // to make entity contain exactly what user selected
+        const nonSelectedPrimaryColumns = this.expressionMap.queryEntity ? metadata.primaryColumns.filter(primaryColumn => columns.indexOf(primaryColumn) === -1) : [];
+        const allColumns = [...columns, ...nonSelectedPrimaryColumns];
+
+        return allColumns.map(column => {
             const selection = this.expressionMap.selects.find(select => select.selection === aliasName + "." + column.propertyName);
             return {
                 selection: this.escape(aliasName) + "." + this.escape(column.databaseName),
                 aliasName: selection && selection.aliasName ? selection.aliasName : aliasName + "_" + column.databaseName,
                 // todo: need to keep in mind that custom selection.aliasName breaks hydrator. fix it later!
+                virtual: selection ? selection.virtual === true : (hasMainAlias ? false : true),
             };
         });
     }
@@ -1429,6 +1401,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
     }
 
     protected async executeCountQuery(queryRunner: QueryRunner): Promise<number> {
+        this.expressionMap.queryEntity = false;
 
         const mainAlias = this.expressionMap.mainAlias!.name; // todo: will this work with "fromTableName"?
         const metadata = this.expressionMap.mainAlias!.metadata;
@@ -1574,6 +1547,8 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
 
         const selectString = Object.keys(orderBys)
             .map(columnName => {
+                if (columnName.indexOf(".") === -1) return;
+
                 const [aliasName, propertyPath] = columnName.split(".");
                 const alias = this.expressionMap.findAliasByName(aliasName);
                 const column = alias.metadata.findColumnWithPropertyName(propertyPath);
@@ -1583,6 +1558,8 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> {
 
         const orderByObject: OrderByCondition = {};
         Object.keys(orderBys).forEach(columnName => {
+            if (columnName.indexOf(".") === -1) return;
+
             const [aliasName, propertyPath] = columnName.split(".");
             const alias = this.expressionMap.findAliasByName(aliasName);
             const column = alias.metadata.findColumnWithPropertyName(propertyPath);

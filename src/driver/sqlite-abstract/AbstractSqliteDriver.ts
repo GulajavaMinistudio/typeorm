@@ -1,26 +1,22 @@
 import {Driver} from "../Driver";
-import {ConnectionIsNotSetError} from "../../error/ConnectionIsNotSetError";
-import {DriverPackageNotInstalledError} from "../../error/DriverPackageNotInstalledError";
-import {OracleQueryRunner} from "./OracleQueryRunner";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {ColumnMetadata} from "../../metadata/ColumnMetadata";
-import {DriverOptionNotSetError} from "../../error/DriverOptionNotSetError";
+import {AbstractSqliteQueryRunner} from "./AbstractSqliteQueryRunner";
 import {DateUtils} from "../../util/DateUtils";
-import {PlatformTools} from "../../platform/PlatformTools";
 import {Connection} from "../../connection/Connection";
 import {RdbmsSchemaBuilder} from "../../schema-builder/RdbmsSchemaBuilder";
-import {OracleConnectionOptions} from "./OracleConnectionOptions";
 import {MappedColumnTypes} from "../types/MappedColumnTypes";
 import {ColumnType} from "../types/ColumnTypes";
+import {QueryRunner} from "../../query-runner/QueryRunner";
 import {DataTypeDefaults} from "../types/DataTypeDefaults";
 import {ColumnSchema} from "../../schema-builder/schema/ColumnSchema";
+import {RandomGenerator} from "../../util/RandomGenerator";
+import {BaseConnectionOptions} from "../../connection/BaseConnectionOptions";
 
 /**
- * Organizes communication with Oracle RDBMS.
- *
- * todo: this driver is not 100% finished yet, need to fix all issues that are left
+ * Organizes communication with sqlite DBMS.
  */
-export class OracleDriver implements Driver {
+export class AbstractSqliteDriver implements Driver {
 
     // -------------------------------------------------------------------------
     // Public Properties
@@ -34,17 +30,22 @@ export class OracleDriver implements Driver {
     /**
      * Connection options.
      */
-    options: OracleConnectionOptions;
+    options: BaseConnectionOptions;
 
     /**
-     * Underlying oracle library.
+     * SQLite underlying library.
      */
-    oracle: any;
+    sqlite: any;
 
     /**
-     * Database connection pool created by underlying driver.
+     * Sqlite has a single QueryRunner because it works on a single database connection.
      */
-    pool: any;
+    queryRunner?: QueryRunner;
+
+    /**
+     * Real database connection with sqlite database.
+     */
+    databaseConnection: any;
 
     /**
      * Default values of length, precision and scale depends on column data type.
@@ -64,38 +65,41 @@ export class OracleDriver implements Driver {
     /**
      * Gets list of supported column data types by a driver.
      *
-     * @see https://www.techonthenet.com/oracle/datatypes.php
-     * @see https://docs.oracle.com/cd/B28359_01/server.111/b28318/datatype.htm#CNCPT012
+     * @see https://www.tutorialspoint.com/sqlite/sqlite_data_types.htm
+     * @see https://sqlite.org/datatype3.html
      */
     supportedDataTypes: ColumnType[] = [
-        "char",
-        "nchar",
-        "nvarchar2",
-        "varchar2",
-        "long",
-        "raw",
-        "long raw",
-        "number",
-        "numeric",
-        "dec",
-        "decimal",
-        "integer",
         "int",
+        "integer",
+        "tinyint",
         "smallint",
-        "real",
-        "double precision",
-        "date",
-        "timestamp",
-        "timestamp with time zone",
-        "timestamp with local time zone",
-        "interval year",
-        "interval day",
-        "bfile",
-        "blob",
+        "mediumint",
+        "bigint",
+        "unsigned big int",
+        "int2",
+        "int8",
+        "integer",
+        "character",
+        "varchar",
+        "varying character",
+        "nchar",
+        "native character",
+        "nvarchar",
+        "text",
         "clob",
-        "nclob",
-        "rowid",
-        "urowid"
+        "text",
+        "blob",
+        "real",
+        "double",
+        "double precision",
+        "float",
+        "real",
+        "numeric",
+        "decimal",
+        "boolean",
+        "date",
+        "time",
+        "datetime",
     ];
 
     /**
@@ -104,13 +108,13 @@ export class OracleDriver implements Driver {
      */
     mappedDataTypes: MappedColumnTypes = {
         createDate: "datetime",
-        createDateDefault: "CURRENT_TIMESTAMP",
+        createDateDefault: "datetime('now')",
         updateDate: "datetime",
-        updateDateDefault: "CURRENT_TIMESTAMP",
-        version: "number",
-        treeLevel: "number",
+        updateDateDefault: "datetime('now')",
+        version: "integer",
+        treeLevel: "integer",
         migrationName: "varchar",
-        migrationTimestamp: "timestamp",
+        migrationTimestamp: "bigint",
     };
 
     // -------------------------------------------------------------------------
@@ -119,24 +123,7 @@ export class OracleDriver implements Driver {
 
     constructor(connection: Connection) {
         this.connection = connection;
-
-        // Object.assign(connection.options, DriverUtils.buildDriverOptions(connection.options)); // todo: do it better way
-
-        this.options = connection.options as OracleConnectionOptions;
-
-        // validate options to make sure everything is set
-        if (!this.options.host)
-            throw new DriverOptionNotSetError("host");
-        if (!this.options.username)
-            throw new DriverOptionNotSetError("username");
-        if (!this.options.sid)
-            throw new DriverOptionNotSetError("sid");
-
-        // load oracle package
-        this.loadDependencies();
-
-        // extra oracle setup
-        this.oracle.outFormat = this.oracle.OBJECT;
+        this.options = connection.options as BaseConnectionOptions;
     }
 
     // -------------------------------------------------------------------------
@@ -145,29 +132,9 @@ export class OracleDriver implements Driver {
 
     /**
      * Performs connection to the database.
-     * Based on pooling options, it can either create connection immediately,
-     * either create a pool and create connection when needed.
      */
-    connect(): Promise<void> {
-
-        // build connection options for the driver
-        const options = Object.assign({}, {
-            user: this.options.username,
-            password: this.options.password,
-            connectString: this.options.host + ":" + this.options.port + "/" + this.options.sid,
-        }, this.options.extra || {});
-
-        // pooling is enabled either when its set explicitly to true,
-        // either when its not defined at all (e.g. enabled by default)
-        return new Promise<void>((ok, fail) => {
-            this.oracle.createPool(options, (err: any, pool: any) => {
-                if (err)
-                    return fail(err);
-
-                this.pool = pool;
-                ok();
-            });
-        });
+    async connect(): Promise<void> {
+        this.databaseConnection = await this.createDatabaseConnection();
     }
 
     afterConnect(): Promise<void> {
@@ -175,18 +142,12 @@ export class OracleDriver implements Driver {
     }
 
     /**
-     * Closes connection with the database.
+     * Closes connection with database.
      */
-    disconnect(): Promise<void> {
-        if (!this.pool)
-            return Promise.reject(new ConnectionIsNotSetError("oracle"));
-
+    async disconnect(): Promise<void> {
         return new Promise<void>((ok, fail) => {
-            const handler = (err: any) => err ? fail(err) : ok();
-
-            // if pooling is used, then disconnect from it
-            this.pool.close(handler);
-            this.pool = undefined;
+            this.queryRunner = undefined;
+            this.databaseConnection.close((err: any) => err ? fail(err) : ok());
         });
     }
 
@@ -201,36 +162,10 @@ export class OracleDriver implements Driver {
      * Creates a query runner used to execute database queries.
      */
     createQueryRunner() {
-        return new OracleQueryRunner(this);
-    }
+        if (!this.queryRunner)
+            this.queryRunner = new AbstractSqliteQueryRunner(this);
 
-    /**
-     * Replaces parameters in the given sql with special escaping character
-     * and an array of parameter names to be passed to a query.
-     */
-    escapeQueryWithParameters(sql: string, parameters: ObjectLiteral): [string, any[]] {
-        if (!parameters || !Object.keys(parameters).length)
-            return [sql, []];
-        const escapedParameters: any[] = [];
-        const keys = Object.keys(parameters).map(parameter => "(:" + parameter + "\\b)").join("|");
-        sql = sql.replace(new RegExp(keys, "g"), (key: string) => {
-            const value = parameters[key.substr(1)];
-            if (value instanceof Function) {
-                return value();
-
-            } else {
-                escapedParameters.push(value);
-                return key;
-            }
-        }); // todo: make replace only in value statements, otherwise problems
-        return [sql, escapedParameters];
-    }
-
-    /**
-     * Escapes a column name.
-     */
-    escape(columnName: string): string {
-        return `"${columnName}"`;
+        return this.queryRunner;
     }
 
     /**
@@ -240,7 +175,7 @@ export class OracleDriver implements Driver {
         if (value === null || value === undefined)
             return value;
 
-        if (columnMetadata.type === Boolean) {
+        if (columnMetadata.type === Boolean || columnMetadata.type === "boolean") {
             return value === true ? 1 : 0;
 
         } else if (columnMetadata.type === "date") {
@@ -250,10 +185,10 @@ export class OracleDriver implements Driver {
             return DateUtils.mixedDateToTimeString(value);
 
         } else if (columnMetadata.type === "datetime" || columnMetadata.type === Date) {
-            return DateUtils.mixedDateToUtcDatetimeString(value);
+            return DateUtils.mixedDateToUtcDatetimeString(value); // to string conversation needs because SQLite stores fate as integer number, when date came as Object
 
-        } else if (columnMetadata.type === "json") {
-            return JSON.stringify(value);
+        } else if (columnMetadata.isGenerated && columnMetadata.generationStrategy === "uuid" && !value) {
+            return RandomGenerator.uuid4();
 
         } else if (columnMetadata.type === "simple-array") {
             return DateUtils.simpleArrayToString(value);
@@ -263,16 +198,16 @@ export class OracleDriver implements Driver {
     }
 
     /**
-     * Prepares given value to a value to be persisted, based on its column type or metadata.
+     * Prepares given value to a value to be hydrated, based on its column type or metadata.
      */
     prepareHydratedValue(value: any, columnMetadata: ColumnMetadata): any {
         if (value === null || value === undefined)
             return value;
-            
-        if (columnMetadata.type === Boolean) {
+
+        if (columnMetadata.type === Boolean || columnMetadata.type === "boolean") {
             return value ? true : false;
 
-        } else if (columnMetadata.type === "datetime") {
+        } else if (columnMetadata.type === "datetime" || columnMetadata.type === Date) {
             return DateUtils.normalizeHydratedDate(value);
 
         } else if (columnMetadata.type === "date") {
@@ -280,9 +215,6 @@ export class OracleDriver implements Driver {
 
         } else if (columnMetadata.type === "time") {
             return DateUtils.mixedTimeToString(value);
-
-        } else if (columnMetadata.type === "json") {
-            return JSON.parse(value);
 
         } else if (columnMetadata.type === "simple-array") {
             return DateUtils.stringToSimpleArray(value);
@@ -292,30 +224,66 @@ export class OracleDriver implements Driver {
     }
 
     /**
+     * Replaces parameters in the given sql with special escaping character
+     * and an array of parameter names to be passed to a query.
+     */
+    escapeQueryWithParameters(sql: string, parameters: ObjectLiteral): [string, any[]] {
+        if (!parameters || !Object.keys(parameters).length)
+            return [sql, []];
+
+        const builtParameters: any[] = [];
+        const keys = Object.keys(parameters).map(parameter => "(:" + parameter + "\\b)").join("|");
+        sql = sql.replace(new RegExp(keys, "g"), (key: string): string => {
+            const value = parameters[key.substr(1)];
+            if (value instanceof Array) {
+                return value.map((v: any) => {
+                    builtParameters.push(v);
+                    return "$" + builtParameters.length;
+                }).join(", ");
+
+            } else if (value instanceof Function) {
+                return value();
+
+            } else {
+                builtParameters.push(value);
+                return "$" + builtParameters.length;
+            }
+        }); // todo: make replace only in value statements, otherwise problems
+        return [sql, builtParameters];
+    }
+
+    /**
+     * Escapes a column name.
+     */
+    escape(columnName: string): string {
+        return "\"" + columnName + "\"";
+    }
+
+    /**
      * Creates a database type from a given column metadata.
      */
-    normalizeType(column: { type?: ColumnType, length?: number, precision?: number, scale?: number, isArray?: boolean }): string {
-        let type = "";
-        if (column.type === Number) {
-            type += "integer";
+    normalizeType(column: { type?: ColumnType, length?: number, precision?: number, scale?: number }): string {
+        if (column.type === Number || column.type === "int") {
+            return "integer";
 
         } else if (column.type === String) {
-            type += "nvarchar2";
+            return "varchar";
 
         } else if (column.type === Date) {
-            type += "timestamp(0)";
+            return "datetime";
 
         } else if (column.type === Boolean) {
-            type += "number(1)";
+            return "boolean";
+
+        } else if (column.type === "uuid") {
+            return "varchar";
 
         } else if (column.type === "simple-array") {
-            type += "text";
+            return "text";
 
         } else {
-            type += column.type;
+            return column.type as string || "";
         }
-
-        return type;
     }
 
     /**
@@ -326,7 +294,7 @@ export class OracleDriver implements Driver {
             return "" + column.default;
 
         } else if (typeof column.default === "boolean") {
-            return column.default === true ? "true" : "false";
+            return column.default === true ? "1" : "0";
 
         } else if (typeof column.default === "function") {
             return column.default();
@@ -365,15 +333,14 @@ export class OracleDriver implements Driver {
     // -------------------------------------------------------------------------
 
     /**
-     * Loads all driver dependencies.
+     * Creates connection with the database.
      */
-    protected loadDependencies(): void {
-        try {
-            this.oracle = PlatformTools.load("oracledb");
+    protected createDatabaseConnection() {
+        throw new Error("Do not use AbstractSqlite directly, it has to be used with one of the sqlite drivers");
+    }
 
-        } catch (e) {
-            throw new DriverPackageNotInstalledError("Oracle", "oracledb");
-        }
+    protected loadDependencies(): void {
+        // depencies have to be loaded in the specific driver
     }
 
 }

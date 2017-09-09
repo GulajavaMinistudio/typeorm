@@ -1,6 +1,6 @@
 import {Entity} from "../../../../../src/decorator/entity/Entity";
-import {PrimaryGeneratedColumn} from "../../../../../src/decorator/columns/PrimaryGeneratedColumn";
 import {Column} from "../../../../../src/decorator/columns/Column";
+import {PrimaryGeneratedColumn} from "../../../../../src/decorator/columns/PrimaryGeneratedColumn";
 
 @Entity()
 export class Post {
@@ -11,11 +11,10 @@ export class Post {
     @Column()
     title: string;
 
-    constructor(id?: number, title?: string) {
-        if (id)
-            this.id = id;
-        if (title)
-            this.title = title;
-    }
+    @Column()
+    text: string;
+
+    @Column({ readonly: true })
+    authorName: string;
 
 }

@@ -28,6 +28,7 @@ import {ObjectType} from "../common/ObjectType";
 import {QueryRunner} from "../query-runner/QueryRunner";
 import {WhereExpression} from "./WhereExpression";
 import {Brackets} from "./Brackets";
+import {SqliteDriver} from "../driver/sqlite/SqliteDriver";
 
 /**
  * Allows to build complex sql queries in a fashion way and execute those queries.
@@ -761,7 +762,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
      * If you had previously ORDER BY expression defined,
      * calling this function will override previously set ORDER BY conditions.
      */
-    orderBy(sort: string, order?: "ASC"|"DESC"): this;
+    orderBy(sort: string, order?: "ASC"|"DESC", nulls?: "NULLS FIRST"|"NULLS LAST"): this;
 
     /**
      * Sets ORDER BY condition in the query builder.
@@ -775,12 +776,16 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
      * If you had previously ORDER BY expression defined,
      * calling this function will override previously set ORDER BY conditions.
      */
-    orderBy(sort?: string|OrderByCondition, order: "ASC"|"DESC" = "ASC"): this {
+    orderBy(sort?: string|OrderByCondition, order: "ASC"|"DESC" = "ASC", nulls?: "NULLS FIRST"|"NULLS LAST"): this {
         if (sort) {
             if (sort instanceof Object) {
                 this.expressionMap.orderBys = sort as OrderByCondition;
             } else {
-                this.expressionMap.orderBys = { [sort as string]: order };
+                if (nulls) {
+                    this.expressionMap.orderBys = { [sort as string]: { order, nulls } };
+                } else {
+                    this.expressionMap.orderBys = { [sort as string]: order };
+                }
             }
         } else {
             this.expressionMap.orderBys = {};
@@ -791,8 +796,12 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
     /**
      * Adds ORDER BY condition in the query builder.
      */
-    addOrderBy(sort: string, order: "ASC"|"DESC" = "ASC"): this {
-        this.expressionMap.orderBys[sort] = order;
+    addOrderBy(sort: string, order: "ASC"|"DESC" = "ASC", nulls?: "NULLS FIRST"|"NULLS LAST"): this {
+        if (nulls) {
+            this.expressionMap.orderBys[sort] = { order, nulls };
+        } else {
+            this.expressionMap.orderBys[sort] = order;
+        }
         return this;
     }
 
@@ -1262,7 +1271,11 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
         if (Object.keys(orderBys).length > 0)
             return " ORDER BY " + Object.keys(orderBys)
                     .map(columnName => {
-                        return this.replacePropertyNames(columnName) + " " + orderBys[columnName];
+                        if (typeof orderBys[columnName] === "string") {
+                            return this.replacePropertyNames(columnName) + " " + orderBys[columnName];
+                        } else {
+                            return this.replacePropertyNames(columnName) + " " + (orderBys[columnName] as any).order + " " + (orderBys[columnName] as any).nulls;
+                        }
                     })
                     .join(", ");
 
@@ -1369,7 +1382,7 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
     protected buildEscapedEntityColumnSelects(aliasName: string, metadata: EntityMetadata): SelectQuery[] {
         const hasMainAlias = this.expressionMap.selects.some(select => select.selection === aliasName);
 
-        const columns: ColumnMetadata[] = hasMainAlias ? metadata.columns : metadata.columns.filter(column => {
+        const columns: ColumnMetadata[] = hasMainAlias ? metadata.columns.filter(column => column.isSelect === true) : metadata.columns.filter(column => {
             return this.expressionMap.selects.some(select => select.selection === aliasName + "." + column.propertyName);
         });
 
@@ -1407,14 +1420,27 @@ export class SelectQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
         const metadata = this.expressionMap.mainAlias!.metadata;
 
         const distinctAlias = this.escape(mainAlias);
-        let countSql = `COUNT(` + metadata.primaryColumns.map((primaryColumn, index) => {
-                const propertyName = this.escape(primaryColumn.databaseName);
-                if (index === 0) {
-                    return `DISTINCT(${distinctAlias}.${propertyName})`;
-                } else {
+        let countSql: string = "";
+        if (metadata.hasMultiplePrimaryKeys) {
+            if (this.connection.driver instanceof SqliteDriver) {
+                countSql = `COUNT(DISTINCT(` + metadata.primaryColumns.map((primaryColumn, index) => {
+                    const propertyName = this.escape(primaryColumn.databaseName);
                     return `${distinctAlias}.${propertyName}`;
-                }
-            }).join(", ") + ") as \"cnt\"";
+                }).join(" || ") + ")) as \"cnt\"";
+
+            } else {
+                countSql = `COUNT(DISTINCT(CONCAT(` + metadata.primaryColumns.map((primaryColumn, index) => {
+                    const propertyName = this.escape(primaryColumn.databaseName);
+                    return `${distinctAlias}.${propertyName}`;
+                }).join(", ") + "))) as \"cnt\"";
+            }
+
+        } else {
+            countSql = `COUNT(DISTINCT(` + metadata.primaryColumns.map((primaryColumn, index) => {
+                const propertyName = this.escape(primaryColumn.databaseName);
+                return `${distinctAlias}.${propertyName}`;
+            }).join(", ") + ")) as \"cnt\"";
+        }
 
         const [countQuerySql, countQueryParameters] = this.clone()
             .mergeExpressionMap({ ignoreParentTablesJoins: true })

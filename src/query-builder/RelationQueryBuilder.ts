@@ -1,6 +1,7 @@
 import {QueryBuilder} from "./QueryBuilder";
 import {RelationUpdater} from "./RelationUpdater";
 import {RelationRemover} from "./RelationRemover";
+import {RelationLoader} from "./RelationLoader";
 
 /**
  * Allows to work with entity relations and perform specific operations with those relations.
@@ -123,36 +124,40 @@ export class RelationQueryBuilder<Entity> extends QueryBuilder<Entity> {
 
     /**
      * Gets entity's relation id.
-     */
     async getId(): Promise<any> {
 
-    }
+    }*/
 
     /**
      * Gets entity's relation ids.
-     */
     async getIds(): Promise<any[]> {
         return [];
-    }
+    }*/
 
     /**
      * Loads a single entity (relational) from the relation.
      * You can also provide id of relational entity to filter by.
      */
-    async loadOne(id?: any): Promise<Entity|undefined> {
-        return undefined;
+    async loadOne<T = any>(): Promise<T|undefined> {
+        let of = this.expressionMap.of;
+        if (!(of instanceof Object)) {
+            const metadata = this.expressionMap.mainAlias!.metadata;
+            if (metadata.hasMultiplePrimaryKeys)
+                throw new Error(`Cannot load entity because only one primary key was specified, however entity contains multiple primary keys`);
+
+            of = metadata.primaryColumns[0].createValueMap(of);
+        }
+
+        const relationLoader = new RelationLoader(this.connection);
+        return relationLoader.load(this.expressionMap.relationMetadata, of);
     }
 
     /**
      * Loads many entities (relational) from the relation.
      * You can also provide ids of relational entities to filter by.
      */
-    async loadMany(ids?: any[]): Promise<Entity[]> {
-        return [];
+    async loadMany<T = any>(): Promise<T[]> {
+        return this.loadOne();
     }
-
-    // -------------------------------------------------------------------------
-    // Protected Methods
-    // -------------------------------------------------------------------------
 
 }

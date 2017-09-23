@@ -104,6 +104,8 @@ export {DeleteQueryBuilder} from "./query-builder/DeleteQueryBuilder";
 export {InsertQueryBuilder} from "./query-builder/InsertQueryBuilder";
 export {UpdateQueryBuilder} from "./query-builder/UpdateQueryBuilder";
 export {RelationQueryBuilder} from "./query-builder/RelationQueryBuilder";
+export {Brackets} from "./query-builder/Brackets";
+export {WhereExpression} from "./query-builder/WhereExpression";
 export {QueryRunner} from "./query-runner/QueryRunner";
 export {EntityManager} from "./entity-manager/EntityManager";
 export {MongoEntityManager} from "./entity-manager/MongoEntityManager";
@@ -121,6 +123,11 @@ export {RemoveEvent} from "./subscriber/event/RemoveEvent";
 export {EntitySubscriberInterface} from "./subscriber/EntitySubscriberInterface";
 export {BaseEntity} from "./repository/BaseEntity";
 export {EntitySchema} from "./entity-schema/EntitySchema";
+export {EntitySchemaTable} from "./entity-schema/EntitySchemaTable";
+export {EntitySchemaColumn} from "./entity-schema/EntitySchemaColumn";
+export {EntitySchemaIndex} from "./entity-schema/EntitySchemaIndex";
+export {EntitySchemaRelation} from "./entity-schema/EntitySchemaRelation";
+export {ColumnType} from "./driver/types/ColumnTypes";
 
 // -------------------------------------------------------------------------
 // Deprecated

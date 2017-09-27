@@ -160,15 +160,15 @@ export class Connection {
             await this.driver.afterConnect();
 
             // if option is set - drop schema once connection is done
-            if (this.options.dropSchema || this.options.dropSchemaOnConnection)
+            if (this.options.dropSchema)
                 await this.dropDatabase();
 
             // if option is set - automatically synchronize a schema
-            if (this.options.synchronize || this.options.autoSchemaSync)
+            if (this.options.synchronize)
                 await this.synchronize();
 
             // if option is set - automatically synchronize a schema
-            if (this.options.migrationsRun || this.options.autoMigrationsRun)
+            if (this.options.migrationsRun)
                 await this.runMigrations();
 
         } catch (error) {
@@ -224,7 +224,7 @@ export class Connection {
      */
     async dropDatabase(): Promise<void> {
         const queryRunner = await this.createQueryRunner("master");
-        const tableSchemas = this.entityMetadatas
+        const schemas = this.entityMetadatas
             .filter(metadata => metadata.schema)
             .map(metadata => metadata.schema!);
 
@@ -234,9 +234,9 @@ export class Connection {
                 .map(metadata => metadata.database!);
             if (this.driver.database && !databases.find(database => database === this.driver.database))
                 databases.push(this.driver.database);
-            await PromiseUtils.runInSequence(databases, database => queryRunner.clearDatabase(tableSchemas, database));
+            await PromiseUtils.runInSequence(databases, database => queryRunner.clearDatabase(schemas, database));
         } else {
-            await queryRunner.clearDatabase(tableSchemas);
+            await queryRunner.clearDatabase(schemas);
         }
         await queryRunner.release();
     }
@@ -404,19 +404,6 @@ export class Connection {
                 `You can use this method only on many-to-many relations.`);
 
         return relationMetadata.junctionEntityMetadata;
-    }
-
-    // -------------------------------------------------------------------------
-    // Deprecated Public Methods
-    // -------------------------------------------------------------------------
-
-    /**
-     * Gets entity manager that allows to perform repository operations with any entity in this connection.
-     *
-     * @deprecated use manager instead.
-     */
-    get entityManager(): EntityManager {
-        return this.manager;
     }
 
     // -------------------------------------------------------------------------

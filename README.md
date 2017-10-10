@@ -525,7 +525,7 @@ createConnection({
     synchronize: true,
     logging: false
 }).then(connection => {
-    // Here you can start to work with your entities
+    // here you can start to work with your entities
 }).catch(error => console.log(error));
 ```
 
@@ -560,7 +560,7 @@ createConnection({
     ],
     synchronize: true,
 }).then(connection => {
-    // Here you can start to work with your entities
+    // here you can start to work with your entities
 }).catch(error => console.log(error));
 ```
 
@@ -864,10 +864,10 @@ createConnection(/*...*/).then(async connection => {
     let photoRepository = connection.getRepository(Photo);
     let metadataRepository = connection.getRepository(PhotoMetadata);
 
-    // first we should persist a photo
+    // first we should save a photo
     await photoRepository.save(photo);
 
-    // photo is saved. Now we need to persist a photo metadata
+    // photo is saved. Now we need to save a photo metadata
     await metadataRepository.save(metadata);
 
     // done
@@ -919,13 +919,13 @@ Here we show that the metadata property of the Photo class is where we store Pho
 Instead of passing a function that returns a property of the photo, you could alternatively simply pass a string to `@OneToOne` decorator, like `"metadata"`. 
 But we used this function-typed approach to make our refactoring easier.
 
-Note that we should use `@JoinColumn` on one side of a relation only. 
+Note that we should use `@JoinColumn` decorator only on one side of a relation. 
 Whichever side you put this decorator on will be the owning side of the relationship. 
 The owning side of a relationship contains a column with a foreign key in the database.
 
 ### Loading objects with their relations
 
-Now let's load our photo, and its photo metadata in a single query. 
+Now let's load our photo and its photo metadata in a single query. 
 There are two ways to do it - using `find*` methods or using `QueryBuilder` functionality. 
 Let's use `find*` methods first. 
 `find*` methods allow you to specify an object with the `FindOneOptions` / `FindManyOptions` interface. 
@@ -945,6 +945,8 @@ createConnection(/*...*/).then(async connection => {
 ```
         
 Here photos will contain an array of photos from the database, and each photo will contain its photo metadata.
+Learn more about Find Options in [this documentation](./docs/find-options.md).
+
 Using find options is good and dead simple, but if you need more complex query you should use `QueryBuilder` instead.
 `QueryBuilder` allows to use more complex queries in an elegant way:
 
@@ -967,13 +969,13 @@ createConnection(/*...*/).then(async connection => {
 ```
 
 `QueryBuilder` allows to create and execute SQL query of almost any complexity.
-When you work with `QueryBuilder` think like you are creating an SQL query.
+When you work with `QueryBuilder` think like you are creating SQL query.
 In this example "photo" and "metadata" are aliases applied to selected photos.
 You use aliases to access columns and properties of the selected data.
 
 ### Using cascades to automatically save related objects
 
-We can setup cascade options in our relations, in the cases when we want our related object to be persisted whenever the other object is saved. 
+We can setup cascade options in our relations, in the cases when we want our related object to be saved whenever the other object is saved. 
 Let's change our photo's `@OneToOne` decorator a bit:
 
 ```typescript
@@ -994,8 +996,8 @@ export class Photo {
 * **cascadeUpdate** - automatically update metadata in the relation if something is changed in this object.
 * **cascadeRemove** - automatically remove metadata from its table if you removed metadata from photo object.
 
-Using `cascadeInsert` allows us not to separately persist photo and separately persist metadata objects now. 
-Now we can simply persist a photo object, and the metadata object will persist automatically because of cascade options.
+Using `cascadeInsert` allows us not to separately save photo and separately save metadata objects now. 
+Now we can simply save a photo object, and the metadata object will be saved automatically because of cascade options.
 
 ```typescript
 createConnection(options).then(async connection => {
@@ -1020,7 +1022,7 @@ createConnection(options).then(async connection => {
     // get repository
     let photoRepository = connection.getRepository(Photo);
 
-    // persisting a photo also persist the metadata
+    // saving a photo also save the metadata
     await photoRepository.save(photo);
 
     console.log("Photo is saved, photo metadata is saved too.")
@@ -1047,7 +1049,7 @@ export class Author {
     @Column()
     name: string;
 
-    @OneToMany(type => Photo, photo => photo.author) // Note: we will create author property in the Photo class below
+    @OneToMany(type => Photo, photo => photo.author) // note: we will create author property in the Photo class below
     photos: Photo[];
 }
 ```
@@ -1120,10 +1122,7 @@ export class Album {
     @Column()
     name: string;
 
-    @ManyToMany(type => Photo, photo => photo.albums, {  // Note: we will create "albums" property in the Photo class below
-        cascadeInsert: true, // Allow to insert a new photo on album save
-        cascadeUpdate: true // Allow to update a photo on album save
-    })
+    @ManyToMany(type => Photo, photo => photo.albums)
     @JoinTable()
     photos: Photo[];
 }
@@ -1137,10 +1136,7 @@ Now let's add the inverse side of our relation to the `Photo` class:
 export class Photo {
     /// ... other columns
 
-    @ManyToMany(type => Album, album => album.photos, {
-        cascadeInsert: true, // Allow to insert a new album on photo save
-        cascadeUpdate: true // Allow to update an album on photo save
-    })
+    @ManyToMany(type => Album, album => album.photos)
     albums: Album[];
 }
 ```
@@ -1170,38 +1166,46 @@ Now let's insert albums and photos to our database:
 ```typescript
 let connection = await createConnection(options);
 
-// Create a few albums
+// create a few albums
 let album1 = new Album();
 album1.name = "Bears";
+await connection.manager.save(album1);
 
 let album2 = new Album();
 album2.name = "Me";
+await connection.manager.save(album2);
 
-// Create a few photos
-let photo1 = new Photo();
-photo1.name = "Me and Bears";
-photo1.description = "I am near polar bears";
-photo1.filename = "photo-with-bears.jpg";
-photo1.albums = [album1];
+// create a few photos
+let photo = new Photo();
+photo.name = "Me and Bears";
+photo.description = "I am near polar bears";
+photo.filename = "photo-with-bears.jpg";
+photo.albums = [album1, album2];
+await connection.manager.save(photo);
 
-let photo2 = new Photo();
-photo2.name = "Me and Bears";
-photo2.description = "I am near polar bears";
-photo2.filename = "photo-with-bears.jpg";
-photo2.albums = [album1];
+// now out photo is saved and albums are attached to it
+// now lets load them:
+const loadedPhoto = await connection
+    .getRepository(Photo)
+    .findOneById(1, { relations: ["albums"] });
+```
 
-// Get entity repository
-let photoRepository = connection.getRepository(Photo);
+`loadedPhoto` will be equal to:
 
-// First save a first photo
-// We only save the photos, albums are persisted
-// automatically because of cascade options
-await photoRepository.save(photo1);
-
-// Second save a first photo
-await photoRepository.save(photo2);
-
-console.log("Both photos have been saved");
+```typescript
+{
+    id: 1,
+    name: "Me and Bears",
+    description: "I am near polar bears",
+    filename: "photo-with-bears.jpg",
+    albums: [{
+        id: 1,
+        name: "Bears"
+    }, {
+        id: 2,
+        name: "Me"
+    }]
+}
 ```
 
 ### Using QueryBuilder
@@ -1214,8 +1218,8 @@ let photos = await connection
     .createQueryBuilder("photo") // first argument is an alias. Alias is what you are selecting - photos. You must specify it.
     .innerJoinAndSelect("photo.metadata", "metadata")
     .leftJoinAndSelect("photo.albums", "album")
-    .where("photo.isPublished=true")
-    .andWhere("(photo.name=:photoName OR photo.name=:bearName)")
+    .where("photo.isPublished = true")
+    .andWhere("(photo.name = :photoName OR photo.name = :bearName)")
     .orderBy("photo.id", "DESC")
     .skip(5)
     .take(10)
@@ -1223,18 +1227,18 @@ let photos = await connection
     .getMany();
 ```
 
-This query builder will select all photos that are published and whose name is "My" or "Mishka".
+This query selects all published photos with "My" or "Mishka" names.
 It will select results from position 5 (pagination offset), 
 and will select only 10 results (pagination limit). 
 The selection result will be ordered by id in descending order. 
-The photos' albums will be left-joined and their metadata will be inner joined.
+The photo's albums will be left-joined and their metadata will be inner joined.
 
 You'll use the query builder in your application a lot. 
-Learn more about QueryBuilder [here](./query-builder.md).
+Learn more about QueryBuilder [here](./select-query-builder.md).
 
 ## Samples
 
-Take a look at the samples in [./sample](sample) for examples of usage.
+Take a look at the samples in [sample](https://github.com/typeorm/typeorm/tree/master/sample) for examples of usage.
 
 There are a few repositories which you can clone and start with:
 
@@ -1255,9 +1259,9 @@ There are several extensions that simplify TypeORM integration with other module
 * [TypeORM integration](https://github.com/typeorm/typeorm-typedi-extensions) with [TypeDI](https://github.com/pleerock/typedi)
 * [TypeORM integration](https://github.com/typeorm/typeorm-routing-controllers-extensions) with [routing-controllers](https://github.com/pleerock/routing-controllers)
 
-## Contributing 
+## Contributing 😰
 
-Learn about contribution [here](CONTRIBUTING.md) and how to setup your development environment [here](DEVELOPER.md).
+Learn about contribution [here](https://github.com/typeorm/typeorm/blob/master/CONTRIBUTING.md) and how to setup your development environment [here](https://github.com/typeorm/typeorm/blob/master/DEVELOPER.md).
 
 This project exists thanks to all the people who contribute:
 

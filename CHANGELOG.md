@@ -5,6 +5,12 @@ however since API is already quite stable we don't expect too much breaking chan
 If we missed a note on some change or you have a questions on migrating from old version, 
 feel free to ask us and community.
 
+## 0.1.1 (next)
+
+* added support for `pg-native` for postgres (#975). To use it you just need to install `npm i pg-native` and it will be picked up automatically.
+* now Find Options support -1 and 1 for DESC and ASC values. This is better user experience for MongoDB users. 
+* now inheritances in embeddeds are supported (#966) 
+
 ## 0.1.0
 
 #### BREAKING CHANGES

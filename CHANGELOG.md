@@ -5,7 +5,14 @@ however since API is already quite stable we don't expect too much breaking chan
 If we missed a note on some change or you have a questions on migrating from old version, 
 feel free to ask us and community.
 
-## 0.1.1
+## 0.1.2 (next)
+
+* sqlite now supports relative database file paths (#798 and #799)
+* fixed bug with not properly working `update`  method (#1037, #1042)
+* fixed bug with replication support (#1035)
+* fixed bug with wrong embedded column names being generated (#969) 
+
+## 0.1.1 (current)
 
 * added support for `pg-native` for postgres (#975). To use it you just need to install `npm i pg-native` and it will be picked up automatically.
 * now Find Options support `-1` and `1` for `DESC` and `ASC` values. This is better user experience for MongoDB users. 

@@ -237,27 +237,26 @@ or
 ### Column types for `mysql` / `mariadb`
 
 `int`, `tinyint`, `smallint`, `mediumint`, `bigint`, `decimal`, `float`, `double`, 
-`decimal`, `real`, `datetime`, `time`, `timestamp`, `int`, `tinyint`, `smallint`, `mediumint`, `bigint`, 
-`character`, `varchar`, `char`, `tinyblob`, `tinytext`, `mediumblob`, `mediumtext`, `blob`, `text`, 
-`longblob`, `longtext`, `date`, `year`, `enum`, `json`
+`real`, `datetime`, `time`, `timestamp`, `character`, `varchar`, `char`, `tinyblob`,
+`tinytext`, `mediumblob`, `mediumtext`, `blob`, `text`, `longblob`, `longtext`, `date`,
+`year`, `enum`, `json`
 
 ### Column types for `postgres`
 
-`int2`, `int2`, `int4`, `int8`, `integer`, `smallint`, `bigint`, `decimal`, `numeric`, `decimal`, 
-`numeric`, `real`, `double precision`, `time`, `time with time zone`, `time without time zone`,
-`timestamp`, `timestamp without time zone`, `timestamp with time zone`, `int`, `smallint`, `bigint`,
-`character varying`, `character`, `varchar`, `char`, `int2`, `integer`, `int4`, `int8`, 
-`float4`, `float8`, `smallserial`, `serial2`, `serial`, `serial4`, `bigserial`, `serial8`, 
-`money`, `boolean`, `bool`, `text`, `citext`, `bytea`, `date`, `interval`, `point`, `line`, `lseg`, `box`, 
+`int`, `int2`, `int4`, `int8`, `integer`, `smallint`, `bigint`, `float4`, `float8`,
+`numeric`, `decimal`, `real`, `double precision`, `time`, `time with time zone`,
+`time without time zone`, `timestamp`, `timestamp without time zone`, `timestamp with time zone`,
+`character varying`, `character`, `varchar`, `char`, `text`, `citext`,
+`smallserial`, `serial2`, `serial`, `serial4`, `bigserial`, `serial8`, 
+`money`, `boolean`, `bool` `bytea`, `date`, `interval`, `point`, `line`, `lseg`, `box`, 
 `circle`, `path`, `polygon`, `cidr`, `inet`, `macaddr`, `bit`, `bit varying`,
  `varbit`, `tsvector`, `tsquery`, `uuid`, `xml`, `json`, `jsonb` 
 
 ### Column types for `sqlite` / `websql` / `cordova`
 
-`int`, `int2`, `int2`, `int8`, `integer`, `tinyint`, `smallint`, `mediumint`, `bigint`, `decimal`,
-`numeric`, `float`, `double`, `decimal`, `numeric`, `real`, `double precision`, `datetime`, 
-`int`, `tinyint`, `smallint`, `mediumint`, `bigint`, `varying character`, `character`, `native character`, 
-`varchar`, `nchar`, `nvarchar2`, `int2`, `integer`, `int8`, `unsigned big int`, `boolean`, 
+`int`, `int2`, `int8`, `integer`, `tinyint`, `smallint`, `mediumint`, `bigint`, `decimal`,
+`numeric`, `float`, `double`, `real`, `double precision`, `datetime`, `varying character`,
+`character`, `native character`, `varchar`, `nchar`, `nvarchar2`, `unsigned big int`, `boolean`, 
 `blob`, `text`, `clob`, `date`
  
 ### Column types for `mssql`

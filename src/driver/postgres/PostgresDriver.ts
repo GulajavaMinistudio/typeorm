@@ -481,7 +481,7 @@ export class PostgresDriver implements Driver {
             return column.default === true ? "true" : "false";
 
         } else if (typeof column.default === "function") {
-            return column.default() + arrayCast;
+            return column.default();
 
         } else if (typeof column.default === "string") {
             return `'${column.default}'${arrayCast}`;
@@ -639,6 +639,12 @@ export class PostgresDriver implements Driver {
 
         // create a connection pool
         const pool = new this.postgres.Pool(connectionOptions);
+        const { logger } = this.connection;
+        /*
+          Attaching an error handler to pool errors is essential, as, otherwise, errors raised will go unhandled and
+          cause the hosting app to crash.
+         */
+        pool.on("error", (error: any) => logger.log("warn", `Postgres pool raised an error. ${error}`));
 
         return new Promise((ok, fail) => {
             pool.connect((err: any, connection: any, release: Function) => {

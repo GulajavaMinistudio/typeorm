@@ -283,7 +283,7 @@ For example:
 or
 
 ```typescript
-@Column({ type: "int", length: 200 })
+@Column({ type: "int", width: 200 })
 ```
 
 ### Column types for `mysql` / `mariadb`
@@ -622,7 +622,7 @@ export class Category {
     description: string;
 
     @TreeChildren()
-    children: Category;
+    children: Category[];
 
     @TreeParent()
     parent: Category;

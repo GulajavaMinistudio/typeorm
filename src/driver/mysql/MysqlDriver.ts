@@ -153,15 +153,10 @@ export class MysqlDriver implements Driver {
      */
     withLengthColumnTypes: ColumnType[] = [
         "char",
-        "nchar",
-        "national char",
         "varchar",
         "nvarchar",
-        "national varchar",
         "binary",
-        "varbinary",
-        "blob",
-        "text"
+        "varbinary"
     ];
 
     /**
@@ -546,6 +541,9 @@ export class MysqlDriver implements Driver {
 
         } else if (typeof defaultValue === "string") {
             return `'${defaultValue}'`;
+
+        } else if (defaultValue === null) {
+            return `null`;
 
         } else {
             return defaultValue;

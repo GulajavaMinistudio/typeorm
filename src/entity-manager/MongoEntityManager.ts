@@ -26,7 +26,8 @@ import {
     MongoCallback,
     MongoCountPreferences,
     MongodbIndexOptions,
-    MongoError, ObjectID,
+    MongoError,
+    ObjectID,
     OrderedBulkOperation,
     ParallelCollectionScanOptions,
     ReadPreference,
@@ -43,14 +44,15 @@ import {FindOptionsUtils} from "../find-options/FindOptionsUtils";
 import {FindOneOptions} from "../find-options/FindOneOptions";
 import {PlatformTools} from "../platform/PlatformTools";
 import {DeepPartial} from "../common/DeepPartial";
-import {QueryPartialEntity} from "../query-builder/QueryPartialEntity";
+import {QueryDeepPartialEntity} from "../query-builder/QueryPartialEntity";
 import {SaveOptions} from "../repository/SaveOptions";
 import {InsertResult} from "../query-builder/result/InsertResult";
 import {UpdateResult} from "../query-builder/result/UpdateResult";
 import {RemoveOptions} from "../repository/RemoveOptions";
 import {DeleteResult} from "../query-builder/result/DeleteResult";
 import {EntityMetadata} from "../metadata/EntityMetadata";
-import {EntitySchema} from "../index";
+import {EntitySchema, FindConditions} from "../index";
+import {BroadcasterResult} from "../subscriber/BroadcasterResult";
 
 /**
  * Entity manager supposed to work with any entity, automatically find its repository and call its methods,
@@ -190,7 +192,7 @@ export class MongoEntityManager extends EntityManager {
      * Does not check if entity exist in the database, so query will fail if duplicate entity is being inserted.
      * You can execute bulk inserts using this method.
      */
-    async insert<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, entity: QueryPartialEntity<Entity>|QueryPartialEntity<Entity>[], options?: SaveOptions): Promise<InsertResult> {
+    async insert<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, entity: QueryDeepPartialEntity<Entity>|QueryDeepPartialEntity<Entity>[], options?: SaveOptions): Promise<InsertResult> {
         // todo: convert entity to its database name
         const result = new InsertResult();
         if (entity instanceof Array) {
@@ -216,7 +218,7 @@ export class MongoEntityManager extends EntityManager {
      * Executes fast and efficient UPDATE query.
      * Does not check if entity exist in the database.
      */
-    async update<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, criteria: string|string[]|number|number[]|Date|Date[]|ObjectID|ObjectID[]|DeepPartial<Entity>, partialEntity: DeepPartial<Entity>, options?: SaveOptions): Promise<UpdateResult> {
+    async update<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, criteria: string|string[]|number|number[]|Date|Date[]|ObjectID|ObjectID[]|FindConditions<Entity>, partialEntity: QueryDeepPartialEntity<Entity>, options?: SaveOptions): Promise<UpdateResult> {
         if (criteria instanceof Array) {
             await Promise.all((criteria as any[]).map(criteriaItem => {
                 return this.update(target, criteriaItem, partialEntity);
@@ -236,7 +238,7 @@ export class MongoEntityManager extends EntityManager {
      * Executes fast and efficient DELETE query.
      * Does not check if entity exist in the database.
      */
-    async delete<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, criteria: string|string[]|number|number[]|Date|Date[]|ObjectID|ObjectID[]|DeepPartial<Entity>, options?: RemoveOptions): Promise<DeleteResult> {
+    async delete<Entity>(target: ObjectType<Entity>|EntitySchema<Entity>|string, criteria: string|string[]|number|number[]|Date|Date[]|ObjectID|ObjectID[]|FindConditions<Entity>, options?: RemoveOptions): Promise<DeleteResult> {
         if (criteria instanceof Array) {
             await Promise.all((criteria as any[]).map(criteriaItem => {
                 return this.delete(target, criteriaItem);
@@ -642,6 +644,7 @@ export class MongoEntityManager extends EntityManager {
      */
     protected applyEntityTransformationToCursor<Entity>(metadata: EntityMetadata, cursor: Cursor<Entity>|AggregationCursor<Entity>) {
         const ParentCursor = PlatformTools.load("mongodb").Cursor;
+        const queryRunner = this.queryRunner;
         cursor.toArray = function (callback?: MongoCallback<Entity[]>) {
             if (callback) {
                 ParentCursor.prototype.toArray.call(this, (error: MongoError, results: Entity[]): void => {
@@ -651,12 +654,24 @@ export class MongoEntityManager extends EntityManager {
                     }
 
                     const transformer = new DocumentToEntityTransformer();
-                    return callback(error, transformer.transformAll(results, metadata));
+                    const entities = transformer.transformAll(results, metadata);
+
+                    // broadcast "load" events
+                    const broadcastResult = new BroadcasterResult();
+                    queryRunner.broadcaster.broadcastLoadEventsForAll(broadcastResult, metadata, entities);
+
+                    Promise.all(broadcastResult.promises).then(() => callback(error, entities));
                 });
             } else {
                 return ParentCursor.prototype.toArray.call(this).then((results: Entity[]) => {
                     const transformer = new DocumentToEntityTransformer();
-                    return transformer.transformAll(results, metadata);
+                    const entities = transformer.transformAll(results, metadata);
+
+                    // broadcast "load" events
+                    const broadcastResult = new BroadcasterResult();
+                    queryRunner.broadcaster.broadcastLoadEventsForAll(broadcastResult, metadata, entities);
+
+                    return Promise.all(broadcastResult.promises).then(() => entities);
                 });
             }
         };
@@ -669,13 +684,26 @@ export class MongoEntityManager extends EntityManager {
                     }
 
                     const transformer = new DocumentToEntityTransformer();
-                    return callback(error, transformer.transform(result, metadata));
+                    const entity = transformer.transform(result, metadata);
+
+                    // broadcast "load" events
+                    const broadcastResult = new BroadcasterResult();
+                    queryRunner.broadcaster.broadcastLoadEventsForAll(broadcastResult, metadata, [entity]);
+
+                    Promise.all(broadcastResult.promises).then(() => callback(error, entity));
                 });
             } else {
                 return ParentCursor.prototype.next.call(this).then((result: Entity) => {
                     if (!result) return result;
+
                     const transformer = new DocumentToEntityTransformer();
-                    return transformer.transform(result, metadata);
+                    const entity = transformer.transform(result, metadata);
+
+                    // broadcast "load" events
+                    const broadcastResult = new BroadcasterResult();
+                    queryRunner.broadcaster.broadcastLoadEventsForAll(broadcastResult, metadata, [entity]);
+
+                    return Promise.all(broadcastResult.promises).then(() => entity);
                 });
             }
         };

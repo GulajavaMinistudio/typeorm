@@ -5,13 +5,31 @@ however since API is already quite stable we don't expect too much breaking chan
 If we missed a note on some change or you have a questions on migrating from old version,
 feel free to ask us and community.
 
-## 0.2.16 (under development)
+## 0.2.17 (under development)
+
+### Bug fixes
+
+* fixed transform embeddeds with boolean values (mongodb) ([#3900](https://github.com/typeorm/typeorm/pull/3900))
+
+### Features
+
+## 0.2.16 (2019-03-26)
 
 ### Bug fixes
 
 * removed unused parameters from `insert`, `update`, `delete` methods ([#3888](https://github.com/typeorm/typeorm/pull/3888))
+* fixed: migration generator produces duplicated changes ([#1960](https://github.com/typeorm/typeorm/issues/1960))
+* fixed: unique constraint not created on embedded entity field ([#3142](https://github.com/typeorm/typeorm/issues/3142))
+* fixed: FK columns have wrong length when PrimaryGeneratedColumn('uuid') is used ([#3604](https://github.com/typeorm/typeorm/issues/3604))
+* fixed: column option unique sqlite error ([#3803](https://github.com/typeorm/typeorm/issues/3803))
+* fixed: 'uuid' in PrimaryGeneratedColumn causes Many-to-Many Relationship to Fail ([#3151](https://github.com/typeorm/typeorm/issues/3151))
+* fixed: sync enums on schema sync ([#3694](https://github.com/typeorm/typeorm/issues/3694))
+* fixed: changes in enum type is not reflected when generating migration (in definition file) ([#3244](https://github.com/typeorm/typeorm/issues/3244))
+* fixed: migration will keep create and drop indexes if index name is the same across tables ([#3379](https://github.com/typeorm/typeorm/issues/3379))
 
 ### Features
+
+* added `lock` option in `FindOptions`
 
 ## 0.2.15 (2019-03-14)
 

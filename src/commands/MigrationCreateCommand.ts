@@ -2,7 +2,7 @@ import {ConnectionOptionsReader} from "../connection/ConnectionOptionsReader";
 import {CommandUtils} from "./CommandUtils";
 import {camelCase} from "../util/StringUtils";
 import * as yargs from "yargs";
-const chalk = require("chalk");
+import chalk from "chalk";
 
 /**
  * Creates a new migration file.
@@ -59,7 +59,7 @@ export class MigrationCreateCommand implements yargs.CommandModule {
                 } catch (err) { }
             }
 
-            const path = process.cwd() + "/" + (directory ? (directory + "/") : "") + filename;
+            const path = (directory.startsWith("/") ? "" : process.cwd() + "/") + (directory ? (directory + "/") : "") + filename;
             await CommandUtils.createFile(path, fileContent);
             console.log(`Migration ${chalk.blue(path)} has been generated successfully.`);
 

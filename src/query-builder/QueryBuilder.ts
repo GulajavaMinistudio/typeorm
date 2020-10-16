@@ -17,7 +17,6 @@ import {ColumnMetadata} from "../metadata/ColumnMetadata";
 import {SqljsDriver} from "../driver/sqljs/SqljsDriver";
 import {SqlServerDriver} from "../driver/sqlserver/SqlServerDriver";
 import {OracleDriver} from "../driver/oracle/OracleDriver";
-import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {EntitySchema} from "../";
 import {FindOperator} from "../find-options/FindOperator";
 import {In} from "../find-options/operator/In";
@@ -447,6 +446,16 @@ export abstract class QueryBuilder<Entity> {
     }
 
     /**
+     * Includes a Query comment in the query builder.  This is helpful for debugging purposes,
+     * such as finding a specific query in the database server's logs, or for categorization using
+     * an APM product.
+     */
+    comment(comment: string): this {
+        this.expressionMap.comment = comment;
+        return this;
+    }
+
+    /**
      * Disables escaping.
      */
     disableEscaping(): this {
@@ -611,6 +620,19 @@ export abstract class QueryBuilder<Entity> {
         }
 
         return statement;
+    }
+
+    protected createComment(): string {
+        if (!this.expressionMap.comment) {
+            return "";
+        }
+
+        // ANSI SQL 2003 support C style comments - comments that start with `/*` and end with `*/`
+        // In some dialects query nesting is available - but not all.  Because of this, we'll need
+        // to scrub "ending" characters from the SQL but otherwise we can leave everything else
+        // as-is and it should be valid.
+
+        return `/* ${this.expressionMap.comment.replace("*/", "")} */ `;
     }
 
     /**
@@ -916,8 +938,8 @@ export abstract class QueryBuilder<Entity> {
             case "between":
                 return `${aliasPath} BETWEEN ${parameters[0]} AND ${parameters[1]}`;
             case "in":
-                if ((this.connection.driver instanceof OracleDriver || this.connection.driver instanceof MysqlDriver) && parameters.length === 0) {
-                    return `${aliasPath} IN (null)`;
+                if (parameters.length === 0) {
+                    return "0=1";
                 }
                 return `${aliasPath} IN (${parameters.join(", ")})`;
             case "any":

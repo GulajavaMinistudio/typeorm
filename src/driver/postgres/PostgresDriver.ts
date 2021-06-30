@@ -19,6 +19,8 @@ import {ReplicationMode} from "../types/ReplicationMode";
 import {PostgresConnectionCredentialsOptions} from "./PostgresConnectionCredentialsOptions";
 import {PostgresConnectionOptions} from "./PostgresConnectionOptions";
 import {PostgresQueryRunner} from "./PostgresQueryRunner";
+import {DriverUtils} from "../DriverUtils";
+import { TypeORMError } from "../../error";
 
 /**
  * Organizes communication with PostgreSQL DBMS.
@@ -262,6 +264,8 @@ export class PostgresDriver implements Driver {
         }
         // load postgres package
         this.loadDependencies();
+
+        this.database = DriverUtils.buildDriverOptions(this.options.replication ? this.options.replication.master : this.options).database;
 
         // ObjectUtils.assign(this.options, DriverUtils.buildDriverOptions(connection.options)); // todo: do it better way
         // validate options to make sure everything is set
@@ -763,21 +767,20 @@ export class PostgresDriver implements Driver {
      * Compares "default" value of the column.
      * Postgres sorts json values before it is saved, so in that case a deep comparison has to be performed to see if has changed.
      */
-    defaultEqual(columnMetadata: ColumnMetadata, tableColumn: TableColumn): boolean {
-      if (Array<ColumnType>("json", "jsonb").indexOf(columnMetadata.type) >= 0
-       && typeof columnMetadata.default !== "function"
-       && columnMetadata.default !== undefined) {
-        let columnDefault = columnMetadata.default;
-        if (typeof columnDefault !== "object") {
-          columnDefault = JSON.parse(columnMetadata.default);
+    private defaultEqual(columnMetadata: ColumnMetadata, tableColumn: TableColumn): boolean {
+        if (
+            ["json", "jsonb"].includes(columnMetadata.type as string)
+            && !["function", "undefined"].includes(typeof columnMetadata.default)
+        ) {
+            const tableColumnDefault = typeof tableColumn.default === "string" ?
+                JSON.parse(tableColumn.default.substring(1, tableColumn.default.length-1)) :
+                tableColumn.default;
+
+            return OrmUtils.deepCompare(columnMetadata.default, tableColumnDefault);
         }
-        let tableDefault = JSON.parse(tableColumn.default.substring(1, tableColumn.default.length-1));
-        return OrmUtils.deepCompare(columnDefault, tableDefault);
-      }
-      else {
+
         const columnDefault = this.lowerDefaultValueIfNecessary(this.normalizeDefault(columnMetadata));
-        return (columnDefault === tableColumn.default);
-      }
+        return columnDefault === tableColumn.default;
     }
 
     /**
@@ -991,7 +994,7 @@ export class PostgresDriver implements Driver {
             return PlatformTools.load("pg-query-stream");
 
         } catch (e) { // todo: better error for browser env
-            throw new Error(`To use streams you should install pg-query-stream package. Please run npm i pg-query-stream --save command.`);
+            throw new TypeORMError(`To use streams you should install pg-query-stream package. Please run npm i pg-query-stream --save command.`);
         }
     }
 

@@ -14,6 +14,8 @@ import {EntityMetadata} from "../../metadata/EntityMetadata";
 import {OrmUtils} from "../../util/OrmUtils";
 import {ApplyValueTransformers} from "../../util/ApplyValueTransformers";
 import {ReplicationMode} from "../types/ReplicationMode";
+import {DriverUtils} from "../DriverUtils";
+import { TypeORMError } from "../../error";
 
 /**
  * Organizes communication with sqlite DBMS.
@@ -206,6 +208,8 @@ export abstract class AbstractSqliteDriver implements Driver {
     constructor(connection: Connection) {
         this.connection = connection;
         this.options = connection.options as BaseConnectionOptions;
+
+        this.database = DriverUtils.buildDriverOptions(this.options).database;
     }
 
     // -------------------------------------------------------------------------
@@ -624,7 +628,7 @@ export abstract class AbstractSqliteDriver implements Driver {
      * Creates connection with the database.
      */
     protected createDatabaseConnection() {
-        throw new Error("Do not use AbstractSqlite directly, it has to be used with one of the sqlite drivers");
+        throw new TypeORMError("Do not use AbstractSqlite directly, it has to be used with one of the sqlite drivers");
     }
 
     /**

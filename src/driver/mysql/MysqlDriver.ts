@@ -19,6 +19,7 @@ import {EntityMetadata} from "../../metadata/EntityMetadata";
 import {OrmUtils} from "../../util/OrmUtils";
 import {ApplyValueTransformers} from "../../util/ApplyValueTransformers";
 import {ReplicationMode} from "../types/ReplicationMode";
+import { TypeORMError } from "../../error";
 
 /**
  * Organizes communication with MySQL DBMS.
@@ -310,7 +311,7 @@ export class MysqlDriver implements Driver {
         // load mysql package
         this.loadDependencies();
 
-        this.database = this.options.replication ? this.options.replication.master.database : this.options.database;
+        this.database = DriverUtils.buildDriverOptions(this.options.replication ? this.options.replication.master : this.options).database;
 
         // validate options to make sure everything is set
         // todo: revisit validation with replication in mind
@@ -685,7 +686,7 @@ export class MysqlDriver implements Driver {
                     err ? fail(err) : ok(this.prepareDbConnection(dbConnection));
                 });
             } else {
-                fail(new Error(`Connection is not established with mysql database`));
+                fail(new TypeORMError(`Connection is not established with mysql database`));
             }
         });
     }
@@ -837,7 +838,7 @@ export class MysqlDriver implements Driver {
              * @see https://github.com/typeorm/typeorm/issues/1373
              */
             if (Object.keys(this.mysql).length === 0) {
-                throw new Error("'mysql' was found but it is empty. Falling back to 'mysql2'.");
+                throw new TypeORMError("'mysql' was found but it is empty. Falling back to 'mysql2'.");
             }
         } catch (e) {
             try {

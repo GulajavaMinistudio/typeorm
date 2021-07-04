@@ -14,7 +14,6 @@ import {ReturningResultsEntityUpdator} from "./ReturningResultsEntityUpdator";
 import {SqljsDriver} from "../driver/sqljs/SqljsDriver";
 import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {BroadcasterResult} from "../subscriber/BroadcasterResult";
-import {AbstractSqliteDriver} from "../driver/sqlite-abstract/AbstractSqliteDriver";
 import {OrderByCondition} from "../find-options/OrderByCondition";
 import {LimitOnUpdateNotSupportedError} from "../error/LimitOnUpdateNotSupportedError";
 import {MissingDeleteDateColumnError} from "../error/MissingDeleteDateColumnError";
@@ -190,21 +189,21 @@ export class SoftDeleteQueryBuilder<Entity> extends QueryBuilder<Entity> impleme
      * Adds new AND WHERE with conditions for the given ids.
      */
     whereInIds(ids: any|any[]): this {
-        return this.where(this.createWhereIdsExpression(ids));
+        return this.where(this.getWhereInIdsCondition(ids));
     }
 
     /**
      * Adds new AND WHERE with conditions for the given ids.
      */
     andWhereInIds(ids: any|any[]): this {
-        return this.andWhere(this.createWhereIdsExpression(ids));
+        return this.andWhere(this.getWhereInIdsCondition(ids));
     }
 
     /**
      * Adds new OR WHERE with conditions for the given ids.
      */
     orWhereInIds(ids: any|any[]): this {
-        return this.orWhere(this.createWhereIdsExpression(ids));
+        return this.orWhere(this.getWhereInIdsCondition(ids));
     }
     /**
      * Optional returning/output clause.
@@ -376,7 +375,6 @@ export class SoftDeleteQueryBuilder<Entity> extends QueryBuilder<Entity> impleme
 
         // prepare columns and values to be updated
         const updateColumnAndValues: string[] = [];
-        const newParameters: ObjectLiteral = {};
 
         switch (this.expressionMap.queryType) {
             case "soft-delete":
@@ -395,14 +393,6 @@ export class SoftDeleteQueryBuilder<Entity> extends QueryBuilder<Entity> impleme
 
         if (updateColumnAndValues.length <= 0) {
             throw new UpdateValuesMissingError();
-        }
-
-        // we re-write parameters this way because we want our "UPDATE ... SET" parameters to be first in the list of "nativeParameters"
-        // because some drivers like mysql depend on order of parameters
-        if (this.connection.driver instanceof MysqlDriver ||
-            this.connection.driver instanceof OracleDriver ||
-            this.connection.driver instanceof AbstractSqliteDriver) {
-            this.expressionMap.nativeParameters = Object.assign(newParameters, this.expressionMap.nativeParameters);
         }
 
         // get a table name and all column database names

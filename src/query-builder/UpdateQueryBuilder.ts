@@ -7,12 +7,11 @@ import {Connection} from "../connection/Connection";
 import {QueryRunner} from "../query-runner/QueryRunner";
 import {SqlServerDriver} from "../driver/sqlserver/SqlServerDriver";
 import {PostgresDriver} from "../driver/postgres/PostgresDriver";
-import {WhereExpression} from "./WhereExpression";
+import {WhereExpressionBuilder} from "./WhereExpressionBuilder";
 import {Brackets} from "./Brackets";
 import {UpdateResult} from "./result/UpdateResult";
 import {ReturningStatementNotSupportedError} from "../error/ReturningStatementNotSupportedError";
 import {ReturningResultsEntityUpdator} from "./ReturningResultsEntityUpdator";
-import {SqljsDriver} from "../driver/sqljs/SqljsDriver";
 import {MysqlDriver} from "../driver/mysql/MysqlDriver";
 import {BroadcasterResult} from "../subscriber/BroadcasterResult";
 import {OrderByCondition} from "../find-options/OrderByCondition";
@@ -22,13 +21,12 @@ import {UpdateValuesMissingError} from "../error/UpdateValuesMissingError";
 import {EntityColumnNotFound} from "../error/EntityColumnNotFound";
 import {QueryDeepPartialEntity} from "./QueryPartialEntity";
 import {AuroraDataApiDriver} from "../driver/aurora-data-api/AuroraDataApiDriver";
-import {BetterSqlite3Driver} from "../driver/better-sqlite3/BetterSqlite3Driver";
 import { TypeORMError } from "../error";
 
 /**
  * Allows to build complex sql queries in a fashion way and execute those queries.
  */
-export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements WhereExpression {
+export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements WhereExpressionBuilder {
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -94,32 +92,14 @@ export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
 
             // execute update query
             const [updateSql, parameters] = this.getQueryAndParameters();
-            const updateResult = new UpdateResult();
+
             const statements = [declareSql, updateSql, selectOutputSql];
-            const result = await queryRunner.query(
+            const queryResult = await queryRunner.query(
                 statements.filter(sql => sql != null).join(";\n\n"),
                 parameters,
+                true
             );
-
-            if (this.connection.driver instanceof PostgresDriver) {
-                updateResult.raw = result[0];
-                updateResult.affected = result[1];
-            }
-            else if (this.connection.driver instanceof MysqlDriver) {
-                updateResult.raw = result;
-                updateResult.affected = result.affectedRows;
-            }
-            else if (this.connection.driver instanceof AuroraDataApiDriver) {
-                updateResult.raw = result;
-                updateResult.affected = result.numberOfRecordsUpdated;
-            }
-            else if (this.connection.driver instanceof BetterSqlite3Driver) { // only works for better-sqlite3
-                updateResult.raw = result;
-                updateResult.affected = result.changes;
-            }
-            else {
-                updateResult.raw = result;
-            }
+            const updateResult = UpdateResult.from(queryResult);
 
             // if we are updating entities and entity updation is enabled we must update some of entity columns (like version, update date, etc.)
             if (this.expressionMap.updateEntity === true &&
@@ -155,9 +135,6 @@ export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
             if (queryRunner !== this.queryRunner) { // means we created our own query runner
                 await queryRunner.release();
             }
-            if (this.connection.driver instanceof SqljsDriver && !queryRunner.isTransactionActive) {
-                await this.connection.driver.autoSave();
-            }
         }
     }
 
@@ -181,7 +158,7 @@ export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
      */
     where(where: string|((qb: this) => string)|Brackets|ObjectLiteral|ObjectLiteral[], parameters?: ObjectLiteral): this {
         this.expressionMap.wheres = []; // don't move this block below since computeWhereParameter can add where expressions
-        const condition = this.computeWhereParameter(where);
+        const condition = this.getWhereCondition(where);
         if (condition)
             this.expressionMap.wheres = [{ type: "simple", condition: condition }];
         if (parameters)
@@ -194,7 +171,7 @@ export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
      * Additionally you can add parameters used in where expression.
      */
     andWhere(where: string|((qb: this) => string)|Brackets|ObjectLiteral|ObjectLiteral[], parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "and", condition: this.computeWhereParameter(where) });
+        this.expressionMap.wheres.push({ type: "and", condition: this.getWhereCondition(where) });
         if (parameters) this.setParameters(parameters);
         return this;
     }
@@ -204,7 +181,7 @@ export class UpdateQueryBuilder<Entity> extends QueryBuilder<Entity> implements 
      * Additionally you can add parameters used in where expression.
      */
     orWhere(where: string|((qb: this) => string)|Brackets|ObjectLiteral|ObjectLiteral[], parameters?: ObjectLiteral): this {
-        this.expressionMap.wheres.push({ type: "or", condition: this.computeWhereParameter(where) });
+        this.expressionMap.wheres.push({ type: "or", condition: this.getWhereCondition(where) });
         if (parameters) this.setParameters(parameters);
         return this;
     }

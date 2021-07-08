@@ -14,7 +14,6 @@ import {InsertValuesMissingError} from "../error/InsertValuesMissingError";
 import {ColumnMetadata} from "../metadata/ColumnMetadata";
 import {ReturningResultsEntityUpdator} from "./ReturningResultsEntityUpdator";
 import {AbstractSqliteDriver} from "../driver/sqlite-abstract/AbstractSqliteDriver";
-import {SqljsDriver} from "../driver/sqljs/SqljsDriver";
 import {BroadcasterResult} from "../subscriber/BroadcasterResult";
 import {EntitySchema} from "../entity-schema/EntitySchema";
 import {OracleDriver} from "../driver/oracle/OracleDriver";
@@ -101,13 +100,15 @@ export class InsertQueryBuilder<Entity> extends QueryBuilder<Entity> {
             // console.time(".getting query and parameters");
             const [insertSql, parameters] = this.getQueryAndParameters();
             // console.timeEnd(".getting query and parameters");
-            const insertResult = new InsertResult();
+
             // console.time(".query execution by database");
             const statements = [declareSql, insertSql, selectOutputSql];
-            insertResult.raw = await queryRunner.query(
-                statements.filter(sql => sql != null).join(";\n\n"),
-                parameters,
-            );
+            const sql = statements.filter(s => s != null).join(";\n\n");
+
+            const queryResult = await queryRunner.query(sql, parameters, true);
+
+            const insertResult = InsertResult.from(queryResult);
+
             // console.timeEnd(".query execution by database");
 
             // load returning results and set them to the entity if entity updation is enabled
@@ -150,9 +151,6 @@ export class InsertQueryBuilder<Entity> extends QueryBuilder<Entity> {
             // console.time(".releasing connection");
             if (queryRunner !== this.queryRunner) { // means we created our own query runner
                 await queryRunner.release();
-            }
-            if (this.connection.driver instanceof SqljsDriver && !queryRunner.isTransactionActive) {
-                await this.connection.driver.autoSave();
             }
             // console.timeEnd(".releasing connection");
             // console.timeEnd("QueryBuilder.execute");

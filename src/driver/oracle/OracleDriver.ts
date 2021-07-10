@@ -349,7 +349,17 @@ export class OracleDriver implements Driver {
      * Oracle does not support table schemas. One user can have only one schema.
      */
     buildTableName(tableName: string, schema?: string, database?: string): string {
-        return tableName;
+        let tablePath = [ tableName ];
+
+        if (schema) {
+            tablePath.unshift(schema);
+        }
+
+        if (database) {
+            tablePath.unshift(database);
+        }
+
+        return tablePath.join('.');
     }
 
     /**
@@ -719,11 +729,32 @@ export class OracleDriver implements Driver {
 
         credentials = Object.assign({}, credentials, DriverUtils.buildDriverOptions(credentials)); // todo: do it better way
 
+        if (!credentials.connectString) {
+            let address = `(PROTOCOL=TCP)`;
+
+            if (credentials.host) {
+                address += `(HOST=${credentials.host})`;
+            }
+
+            if (credentials.port) {
+                address += `(PORT=${credentials.port})`;
+            }
+
+            let connectData = `(SERVER=DEDICATED)`;
+
+            if (credentials.sid) {
+                connectData += `(SID=${credentials.sid})`;
+            }
+
+            const connectString = `(DESCRIPTION=(ADDRESS=${address})(CONNECT_DATA=${connectData}))`;
+            Object.assign(credentials, { connectString });
+        }
+
         // build connection options for the driver
         const connectionOptions = Object.assign({}, {
             user: credentials.username,
             password: credentials.password,
-            connectString: credentials.connectString ? credentials.connectString : credentials.host + ":" + credentials.port + "/" + credentials.sid,
+            connectString: credentials.connectString,
         }, options.extra || {});
 
         // pooling is enabled either when its set explicitly to true,

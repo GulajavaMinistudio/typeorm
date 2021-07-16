@@ -328,6 +328,8 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
     async renameTable(oldTableOrName: Table|string, newTableName: string): Promise<void> {
         const oldTable = oldTableOrName instanceof Table ? oldTableOrName : await this.getCachedTable(oldTableOrName);
         const newTable = oldTable.clone();
+
+        newTable.path = newTableName;
         newTable.name = newTableName;
 
         // rename table
@@ -336,6 +338,7 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
         await this.executeQueries(up, down);
 
         // rename old table;
+        oldTable.path = newTable.path;
         oldTable.name = newTable.name;
 
         // rename unique constraints
@@ -771,10 +774,15 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
     // Protected Methods
     // -------------------------------------------------------------------------
 
-    protected async loadViews(viewNames: string[]): Promise<View[]> {
+    protected async loadViews(viewNames?: string[]): Promise<View[]> {
         const hasTable = await this.hasTable(this.getTypeormMetadataTableName());
-        if (!hasTable)
-            return Promise.resolve([]);
+        if (!hasTable) {
+            return [];
+        }
+
+        if (!viewNames) {
+            viewNames = [];
+        }
 
         const viewNamesString = viewNames.map(name => "'" + name + "'").join(", ");
         let query = `SELECT "t".* FROM "${this.getTypeormMetadataTableName()}" "t" INNER JOIN "sqlite_master" s ON "s"."name" = "t"."name" AND "s"."type" = 'view' WHERE "t"."type" = 'VIEW'`;
@@ -792,26 +800,39 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
     /**
      * Loads all tables (with given names) from the database and creates a Table from them.
      */
-    protected async loadTables(tableNames: string[]): Promise<Table[]> {
+    protected async loadTables(tableNames?: string[]): Promise<Table[]> {
         // if no tables given then no need to proceed
-        if (!tableNames || !tableNames.length)
+        if (tableNames && tableNames.length === 0) {
             return [];
+        }
 
-        const tableNamesString = tableNames.map(tableName => `'${tableName}'`).join(", ");
+        const dbTables: { name: string, sql: string }[] = [];
 
-        // load tables
-        const dbTables: ObjectLiteral[] = await this.query(`SELECT * FROM "sqlite_master" WHERE "type" = 'table' AND "name" IN (${tableNamesString})`);
-
-        // load indices
-        const dbIndicesDef: ObjectLiteral[] = await this.query(`SELECT * FROM "sqlite_master" WHERE "type" = 'index' AND "tbl_name" IN (${tableNamesString})`);
+        if (!tableNames) {
+            const tablesSql = `SELECT * FROM "sqlite_master" WHERE "type" = 'table'`;
+            dbTables.push(...await this.query(tablesSql))
+        } else {
+            const tableNamesString = tableNames.map(tableName => `'${tableName}'`).join(", ");
+            const tablesSql = `SELECT * FROM "sqlite_master" WHERE "type" = 'table' AND "name" IN (${tableNamesString})`;
+            dbTables.push(...await this.query(tablesSql));
+        }
 
         // if tables were not found in the db, no need to proceed
-        if (!dbTables || !dbTables.length)
+        if (dbTables.length === 0) {
             return [];
+        }
+
+        // load indices
+        const tableNamesString = dbTables.map(({ name }) => `'${name}'`).join(", ");
+        const dbIndicesDef: ObjectLiteral[] = await this.query(`SELECT * FROM "sqlite_master" WHERE "type" = 'index' AND "tbl_name" IN (${tableNamesString})`);
 
         // create table schemas for loaded tables
         return Promise.all(dbTables.map(async dbTable => {
-            const table = new Table({name: dbTable["name"]});
+            const table = new Table();
+
+            table.path = dbTable["name"];
+            table.name = dbTable["name"];
+
             const sql = dbTable["sql"];
 
             // load columns and indices
@@ -1181,6 +1202,7 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
         });
 
         // change table name into 'temporary_table'
+        newTable.path = "temporary_" + newTable.path;
         newTable.name = "temporary_" + newTable.name;
 
         // create new table
@@ -1213,6 +1235,8 @@ export abstract class AbstractSqliteQueryRunner extends BaseQueryRunner implemen
         // rename old table
         upQueries.push(new Query(`ALTER TABLE "${newTable.name}" RENAME TO "${oldTable.name}"`));
         downQueries.push(new Query(`ALTER TABLE "${oldTable.name}" RENAME TO "${newTable.name}"`));
+
+        newTable.path = oldTable.path;
         newTable.name = oldTable.name;
 
         // recreate table indices

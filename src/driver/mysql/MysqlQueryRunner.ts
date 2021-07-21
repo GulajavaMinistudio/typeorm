@@ -332,7 +332,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
     /**
      * Creates a new table schema.
      */
-    async createSchema(schema: string, ifNotExist?: boolean): Promise<void> {
+    async createSchema(schemaPath: string, ifNotExist?: boolean): Promise<void> {
         throw new TypeORMError(`Schema create queries are not supported by MySql driver.`);
     }
 
@@ -440,7 +440,6 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         const newTable = oldTable.clone();
         const dbName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
 
-        newTable.path = this.driver.buildTableName(newTableName, newTable.schema, newTable.database);
         newTable.name = dbName ? `${dbName}.${newTableName}` : newTableName;
 
         // rename table
@@ -502,7 +501,6 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         await this.executeQueries(upQueries, downQueries);
 
         // rename old table and replace it in cached tabled;
-        oldTable.path = newTable.path;
         oldTable.name = newTable.name;
         this.replaceCachedTable(oldTable, newTable);
     }
@@ -1452,7 +1450,6 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
             // We do not need to join database name, when database is by default.
             const db = dbTable["TABLE_SCHEMA"] === currentDatabase ? undefined : dbTable["TABLE_SCHEMA"];
             table.database = dbTable["TABLE_SCHEMA"];
-            table.path = this.driver.buildTableName(dbTable["TABLE_NAME"], undefined, dbTable["TABLE_SCHEMA"]);
             table.name = this.driver.buildTableName(dbTable["TABLE_NAME"], undefined, db);
 
             // create columns from the loaded columns
@@ -1586,6 +1583,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
                 return new TableForeignKey({
                     name: dbForeignKey["CONSTRAINT_NAME"],
                     columnNames: foreignKeys.map(dbFk => dbFk["COLUMN_NAME"]),
+                    referencedDatabase: dbForeignKey["REFERENCED_TABLE_SCHEMA"],
                     referencedTableName: referencedTableName,
                     referencedColumnNames: foreignKeys.map(dbFk => dbFk["REFERENCED_COLUMN_NAME"]),
                     onDelete: dbForeignKey["ON_DELETE"],

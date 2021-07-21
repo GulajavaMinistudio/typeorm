@@ -380,7 +380,9 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
     /**
      * Creates a new table schema.
      */
-    async createSchema(schema: string, ifNotExist?: boolean): Promise<void> {
+    async createSchema(schemaPath: string, ifNotExist?: boolean): Promise<void> {
+        const schema = schemaPath.indexOf(".") === -1 ? schemaPath : schemaPath.split(".")[1];
+
         const up = ifNotExist ? `CREATE SCHEMA IF NOT EXISTS "${schema}"` : `CREATE SCHEMA "${schema}"`;
         const down = `DROP SCHEMA "${schema}" CASCADE`;
         await this.executeQueries(new Query(up), new Query(down));
@@ -390,7 +392,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
      * Drops table schema.
      */
     async dropSchema(schemaPath: string, ifExist?: boolean, isCascade?: boolean): Promise<void> {
-        const schema = schemaPath.indexOf(".") === -1 ? schemaPath : schemaPath.split(".")[0];
+        const schema = schemaPath.indexOf(".") === -1 ? schemaPath : schemaPath.split(".")[1];
+
         const up = ifExist ? `DROP SCHEMA IF EXISTS "${schema}" ${isCascade ? "CASCADE" : ""}` : `DROP SCHEMA "${schema}" ${isCascade ? "CASCADE" : ""}`;
         const down = `CREATE SCHEMA "${schema}"`;
         await this.executeQueries(new Query(up), new Query(down));
@@ -519,7 +522,6 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         const oldTableName = oldTable.name.indexOf(".") === -1 ? oldTable.name : oldTable.name.split(".")[1];
         const schemaName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
 
-        newTable.path = this.driver.buildTableName(newTableName, newTable.schema);
         newTable.name = schemaName ? `${schemaName}.${newTableName}` : newTableName;
 
         upQueries.push(new Query(`ALTER TABLE ${this.escapePath(oldTable)} RENAME TO "${newTableName}"`));
@@ -1506,7 +1508,6 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
             const schema = getSchemaFromKey(dbTable, "table_schema");
             table.database = currentDatabase;
             table.schema = dbTable["table_schema"];
-            table.path = this.driver.buildTableName(dbTable["table_name"], dbTable["table_schema"]);
             table.name = this.driver.buildTableName(dbTable["table_name"], schema);
 
             // create columns from the loaded columns
@@ -1664,6 +1665,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
                 return new TableForeignKey({
                     name: dbForeignKey["constraint_name"],
                     columnNames: foreignKeys.map(dbFk => dbFk["column_name"]),
+                    referencedSchema: dbForeignKey["referenced_table_schema"],
                     referencedTableName: referencedTableName,
                     referencedColumnNames: foreignKeys.map(dbFk => dbFk["referenced_column_name"]),
                     onDelete: dbForeignKey["on_delete"],

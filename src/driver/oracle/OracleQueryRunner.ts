@@ -340,7 +340,7 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
     /**
      * Creates a new table schema.
      */
-    async createSchema(schemas: string, ifNotExist?: boolean): Promise<void> {
+    async createSchema(schemaPath: string, ifNotExist?: boolean): Promise<void> {
         throw new TypeORMError(`Schema create queries are not supported by Oracle driver.`);
     }
 
@@ -457,7 +457,6 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
         let newTable = oldTable.clone();
         const dbName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
 
-        newTable.path = this.driver.buildTableName(newTableName, newTable.schema, newTable.database);
         newTable.name = dbName ? `${dbName}.${newTableName}` : newTableName;
 
         // rename table
@@ -1322,7 +1321,6 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
             const owner = dbTable["OWNER"] === currentSchema && (!this.driver.options.schema || this.driver.options.schema === currentSchema) ? undefined : dbTable["OWNER"];
             table.database = currentDatabase;
             table.schema = dbTable["OWNER"];
-            table.path = this.driver.buildTableName(dbTable["TABLE_NAME"], dbTable["OWNER"], currentDatabase);
             table.name = this.driver.buildTableName(dbTable["TABLE_NAME"], owner);
 
             // create columns from the loaded columns
@@ -1440,6 +1438,7 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
                 return new TableForeignKey({
                     name: dbForeignKey["CONSTRAINT_NAME"],
                     columnNames: foreignKeys.map(dbFk => dbFk["COLUMN_NAME"]),
+                    referencedDatabase: table.database,
                     referencedTableName: dbForeignKey["REFERENCED_TABLE_NAME"],
                     referencedColumnNames: foreignKeys.map(dbFk => dbFk["REFERENCED_COLUMN_NAME"]),
                     onDelete: dbForeignKey["ON_DELETE"],

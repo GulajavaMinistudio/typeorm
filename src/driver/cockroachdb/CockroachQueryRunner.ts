@@ -344,7 +344,12 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
      */
     async hasTable(tableOrName: Table|string): Promise<boolean> {
         const parsedTableName = this.parseTableName(tableOrName);
-        const sql = `SELECT * FROM "information_schema"."tables" WHERE "table_schema" = ${parsedTableName.schema} AND "table_name" = ${parsedTableName.tableName}`;
+
+        if (!parsedTableName.schema) {
+            parsedTableName.schema = await this.getCurrentSchema();
+        }
+
+        const sql = `SELECT * FROM "information_schema"."tables" WHERE "table_schema" = '${parsedTableName.schema}' AND "table_name" = '${parsedTableName.tableName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
     }
@@ -354,7 +359,12 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
      */
     async hasColumn(tableOrName: Table|string, columnName: string): Promise<boolean> {
         const parsedTableName = this.parseTableName(tableOrName);
-        const sql = `SELECT * FROM "information_schema"."columns" WHERE "table_schema" = ${parsedTableName.schema} AND "table_name" = ${parsedTableName.tableName} AND "column_name" = '${columnName}'`;
+
+        if (!parsedTableName.schema) {
+            parsedTableName.schema = await this.getCurrentSchema();
+        }
+
+        const sql = `SELECT * FROM "information_schema"."columns" WHERE "table_schema" = '${parsedTableName.schema}' AND "table_name" = '${parsedTableName.tableName}' AND "column_name" = '${columnName}'`;
         const result = await this.query(sql);
         return result.length ? true : false;
     }
@@ -413,8 +423,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         table.columns
             .filter(column => column.isGenerated && column.generationStrategy === "increment")
             .forEach(column => {
-                upQueries.push(new Query(`CREATE SEQUENCE ${this.buildSequenceName(table, column)}`));
-                downQueries.push(new Query(`DROP SEQUENCE ${this.buildSequenceName(table, column)}`));
+                upQueries.push(new Query(`CREATE SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
+                downQueries.push(new Query(`DROP SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
             });
 
         upQueries.push(this.createTableSql(table, createForeignKeys));
@@ -453,8 +463,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
 
         // if dropTable called with dropForeignKeys = true, we must create foreign keys in down query.
         const createForeignKeys: boolean = dropForeignKeys;
-        const tableName = target instanceof Table ? target.name : target;
-        const table = await this.getCachedTable(tableName);
+        const tablePath = this.getTablePath(target);
+        const table = await this.getCachedTable(tablePath);
         const upQueries: Query[] = [];
         const downQueries: Query[] = [];
 
@@ -475,8 +485,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         table.columns
             .filter(column => column.isGenerated && column.generationStrategy === "increment")
             .forEach(column => {
-                upQueries.push(new Query(`DROP SEQUENCE ${this.buildSequenceName(table, column)}`));
-                downQueries.push(new Query(`CREATE SEQUENCE ${this.buildSequenceName(table, column)}`));
+                upQueries.push(new Query(`DROP SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
+                downQueries.push(new Query(`CREATE SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
             });
 
         await this.executeQueries(upQueries, downQueries);
@@ -519,8 +529,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         const downQueries: Query[] = [];
         const oldTable = oldTableOrName instanceof Table ? oldTableOrName : await this.getCachedTable(oldTableOrName);
         const newTable = oldTable.clone();
-        const oldTableName = oldTable.name.indexOf(".") === -1 ? oldTable.name : oldTable.name.split(".")[1];
-        const schemaName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
+
+        const { schema: schemaName, tableName: oldTableName } = this.parseTableName(oldTable);
 
         newTable.name = schemaName ? `${schemaName}.${newTableName}` : newTableName;
 
@@ -554,7 +564,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         // rename index constraints
         newTable.indices.forEach(index => {
             // build new constraint name
-            const schema = this.extractSchema(newTable);
+            const { schema } = this.parseTableName(newTable);
             const newIndexName = this.connection.namingStrategy.indexName(newTable, index.columnNames, index.where);
 
             // build queries
@@ -570,7 +580,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         // rename foreign key constraints
         newTable.foreignKeys.forEach(foreignKey => {
             // build new constraint name
-            const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(newTable, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+            const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(newTable, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
             // build queries
             upQueries.push(new Query(`ALTER TABLE ${this.escapePath(newTable)} RENAME CONSTRAINT "${foreignKey.name}" TO "${newForeignKeyName}"`));
@@ -757,7 +767,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
                     // build new constraint name
                     index.columnNames.splice(index.columnNames.indexOf(oldColumn.name), 1);
                     index.columnNames.push(newColumn.name);
-                    const schema = this.extractSchema(table);
+                    const { schema } = this.parseTableName(table);
                     const newIndexName = this.connection.namingStrategy.indexName(clonedTable, index.columnNames, index.where);
 
                     // build queries
@@ -775,7 +785,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
                     // build new constraint name
                     foreignKey.columnNames.splice(foreignKey.columnNames.indexOf(oldColumn.name), 1);
                     foreignKey.columnNames.push(newColumn.name);
-                    const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(clonedTable, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+                    const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(clonedTable, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
                     // build queries
                     upQueries.push(new Query(`ALTER TABLE ${this.escapePath(table)} RENAME CONSTRAINT "${foreignKey.name}" TO "${newForeignKeyName}"`));
@@ -983,8 +993,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         downQueries.push(new Query(`ALTER TABLE ${this.escapePath(table)} ADD ${this.buildCreateColumnSql(table, column)}`));
 
         if (column.generationStrategy === "increment") {
-            upQueries.push(new Query(`DROP SEQUENCE ${this.buildSequenceName(table, column)}`));
-            downQueries.push(new Query(`CREATE SEQUENCE ${this.buildSequenceName(table, column)}`));
+            upQueries.push(new Query(`DROP SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
+            downQueries.push(new Query(`CREATE SEQUENCE ${this.escapePath(this.buildSequencePath(table, column))}`));
         }
 
         await this.executeQueries(upQueries, downQueries);
@@ -1204,7 +1214,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
 
         // new FK may be passed without name. In this case we generate FK name manually.
         if (!foreignKey.name)
-            foreignKey.name = this.connection.namingStrategy.foreignKeyName(table, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+            foreignKey.name = this.connection.namingStrategy.foreignKeyName(table, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
         const up = this.createForeignKeySql(table, foreignKey);
         const down = this.dropForeignKeySql(table, foreignKey);
@@ -1373,16 +1383,13 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
             viewNames = [];
         }
 
-        const currentSchemaQuery = await this.query(`SELECT * FROM current_schema()`);
-        const currentSchema = currentSchemaQuery[0]["current_schema"];
+        const currentDatabase = await this.getCurrentDatabase();
+        const currentSchema = await this.getCurrentSchema();
 
         const viewsCondition = viewNames.map(viewName => {
-            let [schema, name] = viewName.split(".");
-            if (!name) {
-                name = schema;
-                schema = this.driver.options.schema || currentSchema;
-            }
-            return `("t"."schema" = '${schema}' AND "t"."name" = '${name}')`;
+            const { schema, tableName } = this.parseTableName(viewName);
+
+            return `("t"."schema" = '${schema || currentSchema}' AND "t"."name" = '${tableName}')`;
         }).join(" OR ");
 
         const query = `SELECT "t".*, "v"."check_option" FROM ${this.escapePath(this.getTypeormMetadataTableName())} "t" ` +
@@ -1391,6 +1398,8 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         return dbViews.map((dbView: any) => {
             const view = new View();
             const schema = dbView["schema"] === currentSchema && !this.driver.options.schema ? undefined : dbView["schema"];
+            view.database = currentDatabase;
+            view.schema = dbView["schema"];
             view.name = this.driver.buildTableName(dbView["name"], schema);
             view.expression = dbView["value"];
             return view;
@@ -1417,13 +1426,10 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
 
             dbTables.push(...await this.query(tablesSql));
         } else {
-            const tablesCondition = tableNames.length === 0 ? "1=1" : tableNames.map(tableName => {
-                let [schema, name] = tableName.split(".");
-                if (!name) {
-                    name = schema;
-                    schema = this.driver.options.schema || currentSchema;
-                }
-                return `("table_schema" = '${schema}' AND "table_name" = '${name}')`;
+            const tablesCondition = tableNames
+                .map(tableName => this.parseTableName(tableName))
+                .map(({ schema, tableName }) => {
+                return `("table_schema" = '${schema || currentSchema}' AND "table_name" = '${tableName}')`;
             }).join(" OR ");
             const tablesSql = `SELECT "table_schema", "table_name" FROM "information_schema"."tables" WHERE ` + tablesCondition;
 
@@ -1748,10 +1754,10 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
             const foreignKeysSql = table.foreignKeys.map(fk => {
                 const columnNames = fk.columnNames.map(columnName => `"${columnName}"`).join(", ");
                 if (!fk.name)
-                    fk.name = this.connection.namingStrategy.foreignKeyName(table, fk.columnNames, fk.referencedTableName, fk.referencedColumnNames);
+                    fk.name = this.connection.namingStrategy.foreignKeyName(table, fk.columnNames, this.getTablePath(fk), fk.referencedColumnNames);
                 const referencedColumnNames = fk.referencedColumnNames.map(columnName => `"${columnName}"`).join(", ");
 
-                let constraint = `CONSTRAINT "${fk.name}" FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(fk.referencedTableName)} (${referencedColumnNames})`;
+                let constraint = `CONSTRAINT "${fk.name}" FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(this.getTablePath(fk))} (${referencedColumnNames})`;
                 if (fk.onDelete)
                     constraint += ` ON DELETE ${fk.onDelete}`;
                 if (fk.onUpdate)
@@ -1781,14 +1787,6 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
     }
 
     /**
-     * Extracts schema name from given Table object or table name string.
-     */
-    protected extractSchema(target: Table|string): string|undefined {
-        const tableName = target instanceof Table ? target.name : target;
-        return tableName.indexOf(".") === -1 ? this.driver.options.schema : tableName.split(".")[0];
-    }
-
-    /**
      * Builds drop table sql.
      */
     protected dropTableSql(tableOrPath: Table|string): Query {
@@ -1804,14 +1802,12 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
     }
 
     protected async insertViewDefinitionSql(view: View): Promise<Query> {
-        const currentSchemaQuery = await this.query(`SELECT * FROM current_schema()`);
-        const currentSchema = currentSchemaQuery[0]["current_schema"];
-        const splittedName = view.name.split(".");
-        let schema = this.driver.options.schema || currentSchema;
-        let name = view.name;
-        if (splittedName.length === 2) {
-            schema = splittedName[0];
-            name = splittedName[1];
+        const currentSchema = await this.getCurrentSchema();
+
+        let { schema, tableName: name } = this.parseTableName(view)
+
+        if (!schema) {
+            schema = currentSchema;
         }
 
         const expression = typeof view.expression === "string" ? view.expression.trim() : view.expression(this.connection).getQuery();
@@ -1835,15 +1831,12 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
      * Builds remove view sql.
      */
     protected async deleteViewDefinitionSql(viewOrPath: View|string): Promise<Query> {
-        const currentSchemaQuery = await this.query(`SELECT * FROM current_schema()`);
-        const currentSchema = currentSchemaQuery[0]["current_schema"];
-        const viewName = viewOrPath instanceof View ? viewOrPath.name : viewOrPath;
-        const splittedName = viewName.split(".");
-        let schema = this.driver.options.schema || currentSchema;
-        let name = viewName;
-        if (splittedName.length === 2) {
-            schema = splittedName[0];
-            name = splittedName[1];
+        const currentSchema = await this.getCurrentSchema();
+
+        let { schema, tableName: name } = this.parseTableName(viewOrPath);
+
+        if (!schema) {
+            schema = currentSchema;
         }
 
         const qb = this.connection.createQueryBuilder();
@@ -1930,7 +1923,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
         const columnNames = foreignKey.columnNames.map(column => `"` + column + `"`).join(", ");
         const referencedColumnNames = foreignKey.referencedColumnNames.map(column => `"` + column + `"`).join(",");
         let sql = `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT "${foreignKey.name}" FOREIGN KEY (${columnNames}) ` +
-            `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+            `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
         if (foreignKey.onDelete)
             sql += ` ON DELETE ${foreignKey.onDelete}`;
         if (foreignKey.onUpdate)
@@ -1950,9 +1943,18 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
     /**
      * Builds sequence name from given table and column.
      */
-    protected buildSequenceName(table: Table, columnOrName: TableColumn|string, disableEscape?: true): string {
+    protected buildSequenceName(table: Table, columnOrName: TableColumn|string): string {
+        const { tableName } = this.parseTableName(table);
+
         const columnName = columnOrName instanceof TableColumn ? columnOrName.name : columnOrName;
-        return disableEscape ? `${table.name}_${columnName}_seq` : `"${table.name}_${columnName}_seq"`;
+
+        return `${tableName}_${columnName}_seq`;
+    }
+
+    protected buildSequencePath(table: Table, columnOrName: TableColumn|string): string {
+        const { schema } = this.parseTableName(table);
+
+        return schema ? `${schema}.${this.buildSequenceName(table, columnOrName)}` : this.buildSequenceName(table, columnOrName);
     }
 
     /**
@@ -1973,31 +1975,42 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
     /**
      * Escapes given table or view path.
      */
-    protected escapePath(target: Table|View|string, disableEscape?: boolean): string {
-        let tableName = target instanceof Table || target instanceof View ? target.name : target;
-        tableName = tableName.indexOf(".") === -1 && this.driver.options.schema ? `${this.driver.options.schema}.${tableName}` : tableName;
+    protected escapePath(target: Table|View|string): string {
+        const { schema, tableName } = this.parseTableName(target);
 
-        return tableName.split(".").map(i => {
-            return disableEscape ? i : `"${i}"`;
-        }).join(".");
+        if (schema) {
+            return `"${schema}"."${tableName}"`;
+        }
+
+        return `"${tableName}"`;
     }
 
     /**
      * Returns object with table schema and table name.
      */
-    protected parseTableName(target: Table|string) {
-        const tableName = target instanceof Table ? target.name : target;
-        if (tableName.indexOf(".") === -1) {
+    protected parseTableName(target: Table | View | string): { database?: string, schema?: string, tableName: string } {
+        const driverDatabase = this.driver.database;
+
+        // This really should be abstracted into the driver as well..
+        const driverSchema = this.driver.options.schema;
+
+        if (target instanceof Table || target instanceof View) {
+            const parsed = this.parseTableName(target.name);
+
             return {
-                schema: this.driver.options.schema ? `'${this.driver.options.schema}'` : "current_schema()",
-                tableName: `'${tableName}'`
-            };
-        } else {
-            return {
-                schema: `'${tableName.split(".")[0]}'`,
-                tableName: `'${tableName.split(".")[1]}'`
+                database: target.database || parsed.database || driverDatabase,
+                schema: target.schema || parsed.schema || driverSchema,
+                tableName: parsed.tableName
             };
         }
+
+        const parts = target.split(".")
+
+        return {
+            database: driverDatabase,
+            schema: (parts.length > 1 ? parts[0] : undefined) || driverSchema,
+            tableName: parts.length > 1 ? parts[1] : parts[0],
+        };
     }
 
     /**
@@ -2008,7 +2021,7 @@ export class CockroachQueryRunner extends BaseQueryRunner implements QueryRunner
 
         if (column.isGenerated) {
             if (column.generationStrategy === "increment") {
-                c += ` INT DEFAULT nextval('${this.buildSequenceName(table, column)}')`;
+                c += ` INT DEFAULT nextval('${this.escapePath(this.buildSequencePath(table, column))}')`;
 
             } else if (column.generationStrategy === "rowid") {
                 c += " INT DEFAULT unique_rowid()";

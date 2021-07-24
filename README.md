@@ -878,6 +878,7 @@ createConnection(/*...*/).then(async connection => {
     photo.name = "Me and Bears";
     photo.description = "I am near polar bears";
     photo.filename = "photo-with-bears.jpg";
+    photo.views = 1;
     photo.isPublished = true;
 
     // create a photo metadata
@@ -1293,6 +1294,7 @@ There are several extensions that simplify working with TypeORM and integrating 
 * Models generation from existing database - [typeorm-model-generator](https://github.com/Kononnable/typeorm-model-generator)
 * Fixtures loader - [typeorm-fixtures-cli](https://github.com/RobinCK/typeorm-fixtures)
 * ER Diagram generator - [typeorm-uml](https://github.com/eugene-manuilov/typeorm-uml/)
+* Create/Drop database - [typeorm-extension](https://github.com/Tada5hi/typeorm-extension)
 
 ## Contributing
 

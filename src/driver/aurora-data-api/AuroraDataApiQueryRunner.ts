@@ -336,8 +336,8 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
 
         // if dropTable called with dropForeignKeys = true, we must create foreign keys in down query.
         const createForeignKeys: boolean = dropForeignKeys;
-        const tableName = target instanceof Table ? target.name : target;
-        const table = await this.getCachedTable(tableName);
+        const tablePath = this.getTablePath(target);
+        const table = await this.getCachedTable(tablePath);
         const upQueries: Query[] = [];
         const downQueries: Query[] = [];
 
@@ -389,13 +389,13 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
         const downQueries: Query[] = [];
         const oldTable = oldTableOrName instanceof Table ? oldTableOrName : await this.getCachedTable(oldTableOrName);
         const newTable = oldTable.clone();
-        const dbName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
 
-        newTable.name = dbName ? `${dbName}.${newTableName}` : newTableName;
+        const { database } = this.parseTableName(oldTable);
+        newTable.name = database ? `${database}.${newTableName}` : newTableName;
 
         // rename table
-        upQueries.push(new Query(`RENAME TABLE ${this.escapePath(oldTable.name)} TO ${this.escapePath(newTable.name)}`));
-        downQueries.push(new Query(`RENAME TABLE ${this.escapePath(newTable.name)} TO ${this.escapePath(oldTable.name)}`));
+        upQueries.push(new Query(`RENAME TABLE ${this.escapePath(oldTable)} TO ${this.escapePath(newTable)}`));
+        downQueries.push(new Query(`RENAME TABLE ${this.escapePath(newTable)} TO ${this.escapePath(oldTable)}`));
 
         // rename index constraints
         newTable.indices.forEach(index => {
@@ -427,14 +427,14 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
 
             // build queries
             let up = `ALTER TABLE ${this.escapePath(newTable)} DROP FOREIGN KEY \`${foreignKey.name}\`, ADD CONSTRAINT \`${newForeignKeyName}\` FOREIGN KEY (${columnNames}) ` +
-                `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
             if (foreignKey.onDelete)
                 up += ` ON DELETE ${foreignKey.onDelete}`;
             if (foreignKey.onUpdate)
                 up += ` ON UPDATE ${foreignKey.onUpdate}`;
 
             let down = `ALTER TABLE ${this.escapePath(newTable)} DROP FOREIGN KEY \`${newForeignKeyName}\`, ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-                `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
             if (foreignKey.onDelete)
                 down += ` ON DELETE ${foreignKey.onDelete}`;
             if (foreignKey.onUpdate)
@@ -620,14 +620,14 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
 
                     // build queries
                     let up = `ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${foreignKey.name}\`, ADD CONSTRAINT \`${newForeignKeyName}\` FOREIGN KEY (${columnNames}) ` +
-                        `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                        `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
                     if (foreignKey.onDelete)
                         up += ` ON DELETE ${foreignKey.onDelete}`;
                     if (foreignKey.onUpdate)
                         up += ` ON UPDATE ${foreignKey.onUpdate}`;
 
                     let down = `ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${newForeignKeyName}\`, ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-                        `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                        `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
                     if (foreignKey.onDelete)
                         down += ` ON DELETE ${foreignKey.onDelete}`;
                     if (foreignKey.onUpdate)
@@ -1176,11 +1176,12 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
 
         const currentDatabase = await this.getCurrentDatabase();
         const viewsCondition = viewNames.map(tableName => {
-            let [database, name] = tableName.split(".");
-            if (!name) {
-                name = database;
-                database = this.driver.database || currentDatabase;
+            let { database, tableName: name } = this.parseTableName(tableName)
+
+            if (!database) {
+                database = currentDatabase;
             }
+
             return `(\`t\`.\`schema\` = '${database}' AND \`t\`.\`name\` = '${name}')`;
         }).join(" OR ");
 
@@ -1190,6 +1191,7 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
         return dbViews.map((dbView: any) => {
             const view = new View();
             const db = dbView["schema"] === currentDatabase ? undefined : dbView["schema"];
+            view.database = dbView["schema"];
             view.name = this.driver.buildTableName(dbView["name"], undefined, db);
             view.expression = dbView["value"];
             return view;
@@ -1295,7 +1297,7 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
                         return nonUnique === 0;
                     });
 
-                    const tableMetadata = this.connection.entityMetadatas.find(metadata => metadata.tablePath === table.name);
+                    const tableMetadata = this.connection.entityMetadatas.find(metadata => this.getTablePath(table) === this.getTablePath(metadata));
                     const hasIgnoredIndex = columnUniqueIndex && tableMetadata && tableMetadata.indices
                         .some(index => index.name === columnUniqueIndex["INDEX_NAME"] && index.synchronize === false);
 
@@ -1504,7 +1506,7 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
                     fk.name = this.connection.namingStrategy.foreignKeyName(table, fk.columnNames);
                 const referencedColumnNames = fk.referencedColumnNames.map(columnName => `\`${columnName}\``).join(", ");
 
-                let constraint = `CONSTRAINT \`${fk.name}\` FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(fk.referencedTableName)} (${referencedColumnNames})`;
+                let constraint = `CONSTRAINT \`${fk.name}\` FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(this.getTablePath(fk))} (${referencedColumnNames})`;
                 if (fk.onDelete)
                     constraint += ` ON DELETE ${fk.onDelete}`;
                 if (fk.onUpdate)
@@ -1622,7 +1624,7 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
         const columnNames = foreignKey.columnNames.map(column => `\`${column}\``).join(", ");
         const referencedColumnNames = foreignKey.referencedColumnNames.map(column => `\`${column}\``).join(",");
         let sql = `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-            `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+            `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
         if (foreignKey.onDelete)
             sql += ` ON DELETE ${foreignKey.onDelete}`;
         if (foreignKey.onUpdate)
@@ -1639,11 +1641,26 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
         return new Query(`ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${foreignKeyName}\``);
     }
 
-    protected parseTableName(target: Table|string) {
-        const tableName = target instanceof Table ? target.name : target;
+    protected parseTableName(target: Table | View | string): { database?: string, schema?: string, tableName: string } {
+        const driverDatabase = this.driver.database;
+        const driverSchema = undefined;
+
+        if (target instanceof Table || target instanceof View) {
+            const parsed = this.parseTableName(target.name);
+
+            return {
+                database: target.database || parsed.database || driverDatabase,
+                schema: target.schema || parsed.schema || driverSchema,
+                tableName: parsed.tableName
+            };
+        }
+
+        const parts = target.split(".")
+
         return {
-            database: tableName.indexOf(".") !== -1 ? tableName.split(".")[0] : this.driver.database,
-            tableName: tableName.indexOf(".") !== -1 ? tableName.split(".")[1] : tableName
+            database: (parts.length > 1 ? parts[0] : undefined) || driverDatabase,
+            schema: driverSchema,
+            tableName: parts.length > 1 ? parts[1] : parts[0]
         };
     }
 
@@ -1666,9 +1683,14 @@ export class AuroraDataApiQueryRunner extends BaseQueryRunner implements QueryRu
     /**
      * Escapes given table or view path.
      */
-    protected escapePath(target: Table|View|string, disableEscape?: boolean): string {
-        const tableName = target instanceof Table || target instanceof View ? target.name : target;
-        return tableName.split(".").map(i => disableEscape ? i : `\`${i}\``).join(".");
+    protected escapePath(target: Table|View|string): string {
+        const { database, tableName } = this.parseTableName(target);
+
+        if (database) {
+            return `\`${database}\`.\`${tableName}\``;
+        }
+
+        return `\`${tableName}\``;
     }
 
     /**

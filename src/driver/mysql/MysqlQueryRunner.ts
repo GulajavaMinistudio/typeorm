@@ -385,8 +385,8 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
 
         // if dropTable called with dropForeignKeys = true, we must create foreign keys in down query.
         const createForeignKeys: boolean = dropForeignKeys;
-        const tableName = target instanceof Table ? target.name : target;
-        const table = await this.getCachedTable(tableName);
+        const tablePath = this.getTablePath(target);
+        const table = await this.getCachedTable(tablePath);
         const upQueries: Query[] = [];
         const downQueries: Query[] = [];
 
@@ -438,13 +438,14 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         const downQueries: Query[] = [];
         const oldTable = oldTableOrName instanceof Table ? oldTableOrName : await this.getCachedTable(oldTableOrName);
         const newTable = oldTable.clone();
-        const dbName = oldTable.name.indexOf(".") === -1 ? undefined : oldTable.name.split(".")[0];
 
-        newTable.name = dbName ? `${dbName}.${newTableName}` : newTableName;
+        const { database } = this.parseTableName(oldTable);
+
+        newTable.name = database ? `${database}.${newTableName}` : newTableName;
 
         // rename table
-        upQueries.push(new Query(`RENAME TABLE ${this.escapePath(oldTable.name)} TO ${this.escapePath(newTable.name)}`));
-        downQueries.push(new Query(`RENAME TABLE ${this.escapePath(newTable.name)} TO ${this.escapePath(oldTable.name)}`));
+        upQueries.push(new Query(`RENAME TABLE ${this.escapePath(oldTable)} TO ${this.escapePath(newTable)}`));
+        downQueries.push(new Query(`RENAME TABLE ${this.escapePath(newTable)} TO ${this.escapePath(oldTable)}`));
 
         // rename index constraints
         newTable.indices.forEach(index => {
@@ -474,18 +475,18 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
             // build new constraint name
             const columnNames = foreignKey.columnNames.map(column => `\`${column}\``).join(", ");
             const referencedColumnNames = foreignKey.referencedColumnNames.map(column => `\`${column}\``).join(",");
-            const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(newTable, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+            const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(newTable, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
             // build queries
             let up = `ALTER TABLE ${this.escapePath(newTable)} DROP FOREIGN KEY \`${foreignKey.name}\`, ADD CONSTRAINT \`${newForeignKeyName}\` FOREIGN KEY (${columnNames}) ` +
-                `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
             if (foreignKey.onDelete)
                 up += ` ON DELETE ${foreignKey.onDelete}`;
             if (foreignKey.onUpdate)
                 up += ` ON UPDATE ${foreignKey.onUpdate}`;
 
             let down = `ALTER TABLE ${this.escapePath(newTable)} DROP FOREIGN KEY \`${newForeignKeyName}\`, ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-                `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
             if (foreignKey.onDelete)
                 down += ` ON DELETE ${foreignKey.onDelete}`;
             if (foreignKey.onUpdate)
@@ -669,18 +670,18 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
                     foreignKey.columnNames.push(newColumn.name);
                     const columnNames = foreignKey.columnNames.map(column => `\`${column}\``).join(", ");
                     const referencedColumnNames = foreignKey.referencedColumnNames.map(column => `\`${column}\``).join(",");
-                    const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(clonedTable, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+                    const newForeignKeyName = this.connection.namingStrategy.foreignKeyName(clonedTable, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
                     // build queries
                     let up = `ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${foreignKey.name}\`, ADD CONSTRAINT \`${newForeignKeyName}\` FOREIGN KEY (${columnNames}) ` +
-                        `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                        `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
                     if (foreignKey.onDelete)
                         up += ` ON DELETE ${foreignKey.onDelete}`;
                     if (foreignKey.onUpdate)
                         up += ` ON UPDATE ${foreignKey.onUpdate}`;
 
                     let down = `ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${newForeignKeyName}\`, ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-                        `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+                        `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
                     if (foreignKey.onDelete)
                         down += ` ON DELETE ${foreignKey.onDelete}`;
                     if (foreignKey.onUpdate)
@@ -1078,7 +1079,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
 
         // new FK may be passed without name. In this case we generate FK name manually.
         if (!foreignKey.name)
-            foreignKey.name = this.connection.namingStrategy.foreignKeyName(table, foreignKey.columnNames, foreignKey.referencedTableName, foreignKey.referencedColumnNames);
+            foreignKey.name = this.connection.namingStrategy.foreignKeyName(table, foreignKey.columnNames, this.getTablePath(foreignKey), foreignKey.referencedColumnNames);
 
         const up = this.createForeignKeySql(table, foreignKey);
         const down = this.dropForeignKeySql(table, foreignKey);
@@ -1229,11 +1230,12 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
 
         const currentDatabase = await this.getCurrentDatabase();
         const viewsCondition = viewNames.map(tableName => {
-            let [database, name] = tableName.split(".");
-            if (!name) {
-                name = database;
-                database = this.driver.database || currentDatabase;
+            let { database, tableName: name } = this.parseTableName(tableName)
+
+            if (!database) {
+                database = currentDatabase;
             }
+
             return `(\`t\`.\`schema\` = '${database}' AND \`t\`.\`name\` = '${name}')`;
         }).join(" OR ");
 
@@ -1243,6 +1245,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         return dbViews.map((dbView: any) => {
             const view = new View();
             const db = dbView["schema"] === currentDatabase ? undefined : dbView["schema"];
+            view.database = dbView["schema"];
             view.name = this.driver.buildTableName(dbView["name"], undefined, db);
             view.expression = dbView["value"];
             return view;
@@ -1293,20 +1296,23 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
             // Avoid data directory scan: TABLE_SCHEMA
             // Avoid database directory scan: TABLE_NAME
             // We only use `TABLE_SCHEMA` and `TABLE_NAME` which is `SKIP_OPEN_TABLE`
-            const tablesSql = tableNames.map(tableName => {
-                let [ database, name ] = tableName.split(".");
-                if (!name) {
-                    name = database;
-                    database = this.driver.database || currentDatabase;
-                }
-                return `
-                    SELECT \`TABLE_SCHEMA\`,
-                           \`TABLE_NAME\`
-                    FROM \`INFORMATION_SCHEMA\`.\`TABLES\`
-                    WHERE \`TABLE_SCHEMA\` = '${database}'
-                      AND \`TABLE_NAME\` = '${name}'
-                `;
-            }).join(" UNION ");
+            const tablesSql = tableNames
+                .filter(tableName => tableName)
+                .map(tableName => {
+                    let { database, tableName: name } = this.parseTableName(tableName);
+
+                    if (!database) {
+                        database = currentDatabase;
+                    }
+
+                    return `
+                        SELECT \`TABLE_SCHEMA\`,
+                               \`TABLE_NAME\`
+                        FROM \`INFORMATION_SCHEMA\`.\`TABLES\`
+                        WHERE \`TABLE_SCHEMA\` = '${database}'
+                          AND \`TABLE_NAME\` = '${name}'
+                    `;
+                }).join(" UNION ");
 
             dbTables.push(...await this.query(tablesSql));
         }
@@ -1471,7 +1477,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
                         return nonUnique === 0;
                     });
 
-                    const tableMetadata = this.connection.entityMetadatas.find(metadata => metadata.tablePath === table.name);
+                    const tableMetadata = this.connection.entityMetadatas.find(metadata => this.getTablePath(table) === this.getTablePath(metadata));
                     const hasIgnoredIndex = columnUniqueIndex && tableMetadata && tableMetadata.indices
                         .some(index => index.name === columnUniqueIndex["INDEX_NAME"] && index.synchronize === false);
 
@@ -1684,10 +1690,10 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
             const foreignKeysSql = table.foreignKeys.map(fk => {
                 const columnNames = fk.columnNames.map(columnName => `\`${columnName}\``).join(", ");
                 if (!fk.name)
-                    fk.name = this.connection.namingStrategy.foreignKeyName(table, fk.columnNames, fk.referencedTableName, fk.referencedColumnNames);
+                    fk.name = this.connection.namingStrategy.foreignKeyName(table, fk.columnNames, this.getTablePath(fk), fk.referencedColumnNames);
                 const referencedColumnNames = fk.referencedColumnNames.map(columnName => `\`${columnName}\``).join(", ");
 
-                let constraint = `CONSTRAINT \`${fk.name}\` FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(fk.referencedTableName)} (${referencedColumnNames})`;
+                let constraint = `CONSTRAINT \`${fk.name}\` FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(this.getTablePath(fk))} (${referencedColumnNames})`;
                 if (fk.onDelete)
                     constraint += ` ON DELETE ${fk.onDelete}`;
                 if (fk.onUpdate)
@@ -1807,7 +1813,7 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         const columnNames = foreignKey.columnNames.map(column => `\`${column}\``).join(", ");
         const referencedColumnNames = foreignKey.referencedColumnNames.map(column => `\`${column}\``).join(",");
         let sql = `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT \`${foreignKey.name}\` FOREIGN KEY (${columnNames}) ` +
-            `REFERENCES ${this.escapePath(foreignKey.referencedTableName)}(${referencedColumnNames})`;
+            `REFERENCES ${this.escapePath(this.getTablePath(foreignKey))}(${referencedColumnNames})`;
         if (foreignKey.onDelete)
             sql += ` ON DELETE ${foreignKey.onDelete}`;
         if (foreignKey.onUpdate)
@@ -1824,11 +1830,26 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
         return new Query(`ALTER TABLE ${this.escapePath(table)} DROP FOREIGN KEY \`${foreignKeyName}\``);
     }
 
-    protected parseTableName(target: Table|string) {
-        const tableName = target instanceof Table ? target.name : target;
+    protected parseTableName(target: Table | View | string): { database?: string, schema?: string, tableName: string } {
+        const driverDatabase = this.driver.database;
+        const driverSchema = undefined;
+
+        if (target instanceof Table || target instanceof View) {
+            const parsed = this.parseTableName(target.name);
+
+            return {
+                database: target.database || parsed.database || driverDatabase,
+                schema: target.schema || parsed.schema || driverSchema,
+                tableName: parsed.tableName
+            };
+        }
+
+        const parts = target.split(".")
+
         return {
-            database: tableName.indexOf(".") !== -1 ? tableName.split(".")[0] : this.driver.database,
-            tableName: tableName.indexOf(".") !== -1 ? tableName.split(".")[1] : tableName
+            database: (parts.length > 1 ? parts[0] : undefined) || driverDatabase,
+            schema: driverSchema,
+            tableName: parts.length > 1 ? parts[1] : parts[0]
         };
     }
 
@@ -1851,9 +1872,14 @@ export class MysqlQueryRunner extends BaseQueryRunner implements QueryRunner {
     /**
      * Escapes given table or view path.
      */
-    protected escapePath(target: Table|View|string, disableEscape?: boolean): string {
-        const tableName = target instanceof Table || target instanceof View ? target.name : target;
-        return tableName.split(".").map(i => disableEscape ? i : `\`${i}\``).join(".");
+    protected escapePath(target: Table|View|string): string {
+        const { database, tableName } = this.parseTableName(target);
+
+        if (database) {
+            return `\`${database}\`.\`${tableName}\``;
+        }
+
+        return `\`${tableName}\``;
     }
 
     /**

@@ -196,6 +196,22 @@ export class DataSource {
      */
     setOptions(options: Partial<DataSourceOptions>): this {
         Object.assign(this.options, options)
+
+        if (options.logger || options.logging) {
+            this.logger = new LoggerFactory().create(
+                options.logger || this.options.logger,
+                options.logging || this.options.logging,
+            )
+        }
+
+        if (options.namingStrategy) {
+            this.namingStrategy = options.namingStrategy
+        }
+
+        if (options.cache) {
+            this.queryResultCache = new QueryResultCacheFactory(this).create()
+        }
+
         return this
     }
 
@@ -669,10 +685,11 @@ export class DataSource {
         )
 
         // set current data source to the entities
-        for (let entityKey in flattenedEntities) {
-            const entity = flattenedEntities[entityKey]
-            if (InstanceChecker.isBaseEntityConstructor(entity)) {
-                entity.useDataSource(this)
+        for (let entityMetadata of entityMetadatas) {
+            if (
+                InstanceChecker.isBaseEntityConstructor(entityMetadata.target)
+            ) {
+                entityMetadata.target.useDataSource(this)
             }
         }
     }

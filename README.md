@@ -248,7 +248,7 @@ The quickest way to get started with TypeORM is to use its CLI commands to gener
 Quick start works only if you are using TypeORM in a NodeJS application.
 If you are using other platforms, proceed to the [step-by-step guide](#step-by-step-guide).
 
-To create a new project using CLI, run the follwing command:
+To create a new project using CLI, run the following command:
 
 ```shell
 npx typeorm init --name MyProject --database postgres
@@ -1275,6 +1275,7 @@ There are several extensions that simplify working with TypeORM and integrating 
 -   Models generation from existing database - [typeorm-model-generator](https://github.com/Kononnable/typeorm-model-generator)
 -   Fixtures loader - [typeorm-fixtures-cli](https://github.com/RobinCK/typeorm-fixtures)
 -   ER Diagram generator - [typeorm-uml](https://github.com/eugene-manuilov/typeorm-uml/)
+-   another ER Diagram generator - [erdia](https://www.npmjs.com/package/erdia/)
 -   Create/Drop database - [typeorm-extension](https://github.com/Tada5hi/typeorm-extension)
 
 ## Contributing

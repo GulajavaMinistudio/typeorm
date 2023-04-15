@@ -1,3 +1,15 @@
+## [0.3.15](https://github.com/typeorm/typeorm/compare/0.3.14...0.3.15) (2023-04-15)
+
+### Bug Fixes
+
+* make cache optional fields optional ([#9942](https://github.com/typeorm/typeorm/issues/9942)) ([159c60a](https://github.com/typeorm/typeorm/commit/159c60a6e8cedbd32766fdca9694ec28cde9f6f7))
+* prevent unique index identical to primary key (all sql dialects) ([#9940](https://github.com/typeorm/typeorm/issues/9940)) ([51eecc2](https://github.com/typeorm/typeorm/commit/51eecc2aa07bfe3cfdd649fefadea3d719436d5e))
+* SelectQueryBuilder builds incorrectly escaped alias in Oracle when used on entity with composite key ([#9668](https://github.com/typeorm/typeorm/issues/9668)) ([83c6c0e](https://github.com/typeorm/typeorm/commit/83c6c0ed803f72c872fa40a740eb6fabe2102cbb))
+
+### Features
+
+* support for the latest mongodb v5 ([#9925](https://github.com/typeorm/typeorm/issues/9925)) ([f6a3ce7](https://github.com/typeorm/typeorm/commit/f6a3ce732d86fd01807fc13c049ab51df785d772)), closes [#7907](https://github.com/typeorm/typeorm/issues/7907) [#7907](https://github.com/typeorm/typeorm/issues/7907)
+
 ## [0.3.14](https://github.com/typeorm/typeorm/compare/0.3.12...0.3.14) (2023-04-09)
 
 ### Bug Fixes

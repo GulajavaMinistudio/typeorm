@@ -67,6 +67,11 @@ export class CockroachQueryRunner
      */
     protected storeQueries: boolean = false
 
+    /**
+     * Current number of transaction retries in case of 40001 error.
+     */
+    protected transactionRetries: number = 0
+
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
@@ -141,6 +146,7 @@ export class CockroachQueryRunner
      */
     async startTransaction(isolationLevel?: IsolationLevel): Promise<void> {
         this.isTransactionActive = true
+        this.transactionRetries = 0
         try {
             await this.broadcaster.broadcast("BeforeTransactionStart")
         } catch (err) {
@@ -182,21 +188,12 @@ export class CockroachQueryRunner
             this.transactionDepth -= 1
         } else {
             this.storeQueries = false
-            try {
-                await this.query("RELEASE SAVEPOINT cockroach_restart")
-                await this.query("COMMIT")
-                this.queries = []
-                this.isTransactionActive = false
-                this.transactionDepth -= 1
-            } catch (e) {
-                if (e.code === "40001") {
-                    await this.query("ROLLBACK TO SAVEPOINT cockroach_restart")
-                    for (const q of this.queries) {
-                        await this.query(q.query, q.parameters)
-                    }
-                    await this.commitTransaction()
-                }
-            }
+            await this.query("RELEASE SAVEPOINT cockroach_restart")
+            await this.query("COMMIT")
+            this.queries = []
+            this.isTransactionActive = false
+            this.transactionRetries = 0
+            this.transactionDepth -= 1
         }
 
         await this.broadcaster.broadcast("AfterTransactionCommit")
@@ -220,6 +217,7 @@ export class CockroachQueryRunner
             await this.query("ROLLBACK")
             this.queries = []
             this.isTransactionActive = false
+            this.transactionRetries = 0
         }
         this.transactionDepth -= 1
 
@@ -295,16 +293,45 @@ export class CockroachQueryRunner
                 return result.raw
             }
         } catch (err) {
-            if (err.code !== "40001") {
+            if (
+                err.code === "40001" &&
+                this.isTransactionActive &&
+                this.transactionRetries <
+                    (this.driver.options.maxTransactionRetries || 5)
+            ) {
+                this.transactionRetries += 1
+                this.storeQueries = false
+                await this.query("ROLLBACK TO SAVEPOINT cockroach_restart")
+                const sleepTime =
+                    2 ** this.transactionRetries *
+                    0.1 *
+                    (Math.random() + 0.5) *
+                    1000
+                await new Promise((resolve) => setTimeout(resolve, sleepTime))
+
+                let result = undefined
+                for (const q of this.queries) {
+                    this.driver.connection.logger.logQuery(
+                        `Retrying transaction for query "${q.query}"`,
+                        q.parameters,
+                        this,
+                    )
+                    result = await this.query(q.query, q.parameters)
+                }
+                this.transactionRetries = 0
+                this.storeQueries = true
+
+                return result
+            } else {
                 this.driver.connection.logger.logQueryError(
                     err,
                     query,
                     parameters,
                     this,
                 )
-            }
 
-            throw new QueryFailedError(query, parameters, err)
+                throw new QueryFailedError(query, parameters, err)
+            }
         }
     }
 

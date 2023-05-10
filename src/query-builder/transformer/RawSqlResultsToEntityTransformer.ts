@@ -497,7 +497,7 @@ export class RawSqlResultsToEntityTransformer {
                                     column.referencedColumn!.databaseName,
                                 )
                             ],
-                            column,
+                            column.referencedColumn!,
                         )
                 }
             })

@@ -1,3 +1,33 @@
+## [0.3.16](https://github.com/typeorm/typeorm/compare/0.3.15...0.3.16) (2023-05-09)
+
+### Bug Fixes
+
+* add `trustServerCertificate` option to `SqlServerConnectionOptions` ([#9985](https://github.com/typeorm/typeorm/issues/9985)) ([0305805](https://github.com/typeorm/typeorm/commit/03058055df78034a4544e52cfd277ed1c0cbdcb2)), closes [#8093](https://github.com/typeorm/typeorm/issues/8093)
+* add directConnection options to MongoDB connection ([#9955](https://github.com/typeorm/typeorm/issues/9955)) ([e0165e7](https://github.com/typeorm/typeorm/commit/e0165e75ee818c759b51a7fa3b0b3adc6befa347))
+* add onDelete option validation for oracle ([#9786](https://github.com/typeorm/typeorm/issues/9786)) ([938f94b](https://github.com/typeorm/typeorm/commit/938f94bded92b272bdcecc04534ffb879186dc44)), closes [#9189](https://github.com/typeorm/typeorm/issues/9189)
+* added instanceName to options ([#9968](https://github.com/typeorm/typeorm/issues/9968)) ([7c5627f](https://github.com/typeorm/typeorm/commit/7c5627f2728500bb45a2586a3bfd34ab39d46fad))
+* added transaction retry logic in cockroachdb ([#10032](https://github.com/typeorm/typeorm/issues/10032)) ([607d6f9](https://github.com/typeorm/typeorm/commit/607d6f959525b7c01bad5fe14364e4af82d878bb))
+* allow json as alias for longtext mariadb ([#10018](https://github.com/typeorm/typeorm/issues/10018)) ([2a2bb4b](https://github.com/typeorm/typeorm/commit/2a2bb4bdc11915966a65dc144189b33d410d9d57))
+* convert the join table ID to the referenceColumn ID type ([#9887](https://github.com/typeorm/typeorm/issues/9887)) ([9460296](https://github.com/typeorm/typeorm/commit/9460296147b8117e414ca311828615d87f5ab283))
+* correct encode mongodb auth credentials ([#10024](https://github.com/typeorm/typeorm/issues/10024)) ([96b7ee4](https://github.com/typeorm/typeorm/commit/96b7ee44b2538f65c77c7d168e4f10316cc123fa)), closes [#9885](https://github.com/typeorm/typeorm/issues/9885)
+* create correct children during cascade saving entities with STI ([#9034](https://github.com/typeorm/typeorm/issues/9034)) ([06c1e98](https://github.com/typeorm/typeorm/commit/06c1e98ae20cf516f4f5afc53fec4df91209f121)), closes [#7758](https://github.com/typeorm/typeorm/issues/7758) [#7758](https://github.com/typeorm/typeorm/issues/7758) [#9033](https://github.com/typeorm/typeorm/issues/9033) [#9033](https://github.com/typeorm/typeorm/issues/9033) [#7758](https://github.com/typeorm/typeorm/issues/7758) [#7758](https://github.com/typeorm/typeorm/issues/7758)
+* express option bug in init command ([#10022](https://github.com/typeorm/typeorm/issues/10022)) ([5be20e2](https://github.com/typeorm/typeorm/commit/5be20e2bcd18431e457090a63a99dc06f9c2d3d2))
+* for running cli-ts-node-esm use exit code from child process ([#10030](https://github.com/typeorm/typeorm/issues/10030)) ([a188b1d](https://github.com/typeorm/typeorm/commit/a188b1d9f4cc0bdc36a30be1380104e5f38ccb24)), closes [#10029](https://github.com/typeorm/typeorm/issues/10029)
+* mongodb typings breaks the browser version ([#9962](https://github.com/typeorm/typeorm/issues/9962)) ([99bef49](https://github.com/typeorm/typeorm/commit/99bef491280aedb6b337a14e6723b33e67b048d0)), closes [#9959](https://github.com/typeorm/typeorm/issues/9959)
+* RelationIdLoader has access to queryPlanner when wrapped in transaction ([#9990](https://github.com/typeorm/typeorm/issues/9990)) ([21a9d67](https://github.com/typeorm/typeorm/commit/21a9d67fcf294e805c416d55394d55b238860b7d)), closes [#9988](https://github.com/typeorm/typeorm/issues/9988)
+* resolve duplicate subscriber updated columns ([#9958](https://github.com/typeorm/typeorm/issues/9958)) ([3d67901](https://github.com/typeorm/typeorm/commit/3d67901fde2750a8c10521bedc3eee3d57065b43)), closes [#9948](https://github.com/typeorm/typeorm/issues/9948)
+* select + addOrderBy broke in 0.3.14 ([#9961](https://github.com/typeorm/typeorm/issues/9961)) ([0e56f0f](https://github.com/typeorm/typeorm/commit/0e56f0fcf8ec3f2ec37fee92f75ba09262801655)), closes [#9960](https://github.com/typeorm/typeorm/issues/9960)
+* support More/LessThanOrEqual in relations  ([#9978](https://github.com/typeorm/typeorm/issues/9978)) ([8795c86](https://github.com/typeorm/typeorm/commit/8795c864e835a875e78577b5737da42d78e19247))
+
+### Features
+
+* mariadb uuid inet4 inet6 column data type support ([#9845](https://github.com/typeorm/typeorm/issues/9845)) ([d8a2e37](https://github.com/typeorm/typeorm/commit/d8a2e3730f12bb2b8e521635e176a284594121f3))
+
+### Reverts
+
+* "refactor: remove date-fns package ([#9634](https://github.com/typeorm/typeorm/issues/9634))" ([54f4f89](https://github.com/typeorm/typeorm/commit/54f4f8986adf197eb96ec0bc6d9d5a44d6552bcc))
+
+
 ## [0.3.15](https://github.com/typeorm/typeorm/compare/0.3.14...0.3.15) (2023-04-15)
 
 ### Bug Fixes

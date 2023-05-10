@@ -2785,10 +2785,10 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
                     }" FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(
                         this.getTablePath(fk),
                     )} (${referencedColumnNames})`
-                    if (fk.onDelete && fk.onDelete !== "NO ACTION")
+                    if (fk.onDelete && fk.onDelete !== "NO ACTION") {
                         // Oracle does not support NO ACTION, but we set NO ACTION by default in EntityMetadata
                         constraint += ` ON DELETE ${fk.onDelete}`
-
+                    }
                     return constraint
                 })
                 .join(", ")
@@ -3038,9 +3038,9 @@ export class OracleQueryRunner extends BaseQueryRunner implements QueryRunner {
                 this.getTablePath(foreignKey),
             )} (${referencedColumnNames})`
         // Oracle does not support NO ACTION, but we set NO ACTION by default in EntityMetadata
-        if (foreignKey.onDelete && foreignKey.onDelete !== "NO ACTION")
+        if (foreignKey.onDelete && foreignKey.onDelete !== "NO ACTION") {
             sql += ` ON DELETE ${foreignKey.onDelete}`
-
+        }
         return new Query(sql)
     }
 

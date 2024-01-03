@@ -117,6 +117,10 @@ export abstract class QueryBuilder<Entity extends ObjectLiteral> {
         }
     }
 
+    static registerQueryBuilderClass(name: string, factory: any) {
+        QueryBuilder.queryBuilderRegistry[name] = factory
+    }
+
     // -------------------------------------------------------------------------
     // Abstract Methods
     // -------------------------------------------------------------------------
@@ -1008,9 +1012,31 @@ export abstract class QueryBuilder<Entity extends ObjectLiteral> {
 
                 switch (clause.type) {
                     case "and":
-                        return (index > 0 ? "AND " : "") + expression
+                        return (
+                            (index > 0 ? "AND " : "") +
+                            `${
+                                this.connection.options.isolateWhereStatements
+                                    ? "("
+                                    : ""
+                            }${expression}${
+                                this.connection.options.isolateWhereStatements
+                                    ? ")"
+                                    : ""
+                            }`
+                        )
                     case "or":
-                        return (index > 0 ? "OR " : "") + expression
+                        return (
+                            (index > 0 ? "OR " : "") +
+                            `${
+                                this.connection.options.isolateWhereStatements
+                                    ? "("
+                                    : ""
+                            }${expression}${
+                                this.connection.options.isolateWhereStatements
+                                    ? ")"
+                                    : ""
+                            }`
+                        )
                 }
 
                 return expression
@@ -1105,6 +1131,8 @@ export abstract class QueryBuilder<Entity extends ObjectLiteral> {
                 )}`
             case "and":
                 return condition.parameters.join(" AND ")
+            case "or":
+                return condition.parameters.join(" OR ")
         }
 
         throw new TypeError(
@@ -1531,6 +1559,20 @@ export abstract class QueryBuilder<Entity extends ObjectLiteral> {
                         ),
                     ),
                 }
+            } else if (parameterValue.type === "or") {
+                const values: FindOperator<any>[] = parameterValue.value
+
+                return {
+                    operator: parameterValue.type,
+                    parameters: values.map((operator) =>
+                        this.createWhereConditionExpression(
+                            this.getWherePredicateCondition(
+                                aliasPath,
+                                operator,
+                            ),
+                        ),
+                    ),
+                }
             } else {
                 return {
                     operator: parameterValue.type,
@@ -1633,9 +1675,5 @@ export abstract class QueryBuilder<Entity extends ObjectLiteral> {
 
     protected hasCommonTableExpressions(): boolean {
         return this.expressionMap.commonTableExpressions.length > 0
-    }
-
-    static registerQueryBuilderClass(name: string, factory: any) {
-        QueryBuilder.queryBuilderRegistry[name] = factory
     }
 }

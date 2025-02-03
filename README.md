@@ -4,14 +4,14 @@
   </a>
   <br>
   <br>
-	<a href="https://app.circleci.com/pipelines/github/typeorm/typeorm">
-		<img src="https://circleci.com/gh/typeorm/typeorm/tree/master.svg?style=shield">
+	<a href="https://github.com/typeorm/typeorm/actions/workflows/test.yml">
+		<img src="https://github.com/typeorm/typeorm/actions/workflows/test.yml/badge.svg?branch=master">
 	</a>
 	<a href="https://badge.fury.io/js/typeorm">
 		<img src="https://badge.fury.io/js/typeorm.svg">
 	</a>
-    <a href="https://codecov.io/gh/typeorm/typeorm">
-        <img alt="Codecov" src="https://img.shields.io/codecov/c/github/typeorm/typeorm.svg">
+    <a href='https://coveralls.io/github/typeorm/typeorm?branch=master'>
+        <img src='https://coveralls.io/repos/github/typeorm/typeorm/badge.svg?branch=master' alt='Coverage Status' />
     </a>
   <br>
   <br>

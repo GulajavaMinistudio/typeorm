@@ -656,7 +656,9 @@ export class PostgresDriver implements Driver {
         if (columnMetadata.type === Boolean) {
             return value === true ? 1 : 0
         } else if (columnMetadata.type === "date") {
-            return DateUtils.mixedDateToDateString(value)
+            return DateUtils.mixedDateToDateString(value, {
+                utc: columnMetadata.utc,
+            })
         } else if (columnMetadata.type === "time") {
             return DateUtils.mixedDateToTimeString(value)
         } else if (
@@ -755,7 +757,9 @@ export class PostgresDriver implements Driver {
         ) {
             value = DateUtils.normalizeHydratedDate(value)
         } else if (columnMetadata.type === "date") {
-            value = DateUtils.mixedDateToDateString(value)
+            value = DateUtils.mixedDateToDateString(value, {
+                utc: columnMetadata.utc,
+            })
         } else if (columnMetadata.type === "time") {
             value = DateUtils.mixedTimeToString(value)
         } else if (
@@ -1214,7 +1218,11 @@ export class PostgresDriver implements Driver {
 
         return new Promise((ok, fail) => {
             this.master.connect((err: any, connection: any, release: any) => {
-                err ? fail(err) : ok([connection, release])
+                if (err) {
+                    fail(err)
+                } else {
+                    ok([connection, release])
+                }
             })
         })
     }
@@ -1234,7 +1242,11 @@ export class PostgresDriver implements Driver {
         return new Promise((ok, fail) => {
             this.slaves[random].connect(
                 (err: any, connection: any, release: any) => {
-                    err ? fail(err) : ok([connection, release])
+                    if (err) {
+                        fail(err)
+                    } else {
+                        ok([connection, release])
+                    }
                 },
             )
         })
@@ -1565,14 +1577,17 @@ export class PostgresDriver implements Driver {
 
                 if (options.logNotifications) {
                     connection.on("notice", (msg: any) => {
-                        msg && this.connection.logger.log("info", msg.message)
+                        if (msg) {
+                            this.connection.logger.log("info", msg.message)
+                        }
                     })
                     connection.on("notification", (msg: any) => {
-                        msg &&
+                        if (msg) {
                             this.connection.logger.log(
                                 "info",
                                 `Received NOTIFY on channel ${msg.channel}: ${msg.payload}.`,
                             )
+                        }
                     })
                 }
                 release()
